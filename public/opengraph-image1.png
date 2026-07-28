@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1200" height="630" version="1.1" xmlns="http://www.w3.org/2000/svg">
+ <rect width="1200" height="630" fill="#f0f9ff"/>
+ <g transform="translate(0 -22.5)">
+  <path d="m507 262.5c-37.312-32.062-85.312-49.75-139-49.75-116.12 0-210.38 94.25-210.38 210.38s94.25 210.38 210.38 210.38c53.688 0 101.69-20.938 139-49.75v-105.38h-139v-105.75z" fill="#1e40af"/>
+  <text x="599.5" y="480" fill="#1e3a8a" font-family="Arial, sans-serif" font-size="100px" font-weight="bold" text-anchor="middle">Tabungin</text>
+  <text x="599.5" y="550" fill="#6b7280" font-family="Arial, sans-serif" font-size="30px" text-anchor="middle">Aplikasi tabungan siswa modern</text>
+ </g>
+</svg>

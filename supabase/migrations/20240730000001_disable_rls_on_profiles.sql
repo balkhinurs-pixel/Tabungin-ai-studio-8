@@ -1,0 +1,2 @@
+-- This migration file is intentionally left empty as it is no longer needed.
+-- The changes have been consolidated into the main schema or other migration files.

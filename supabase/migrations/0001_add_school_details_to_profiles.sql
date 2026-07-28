@@ -1,0 +1,2 @@
+-- This migration file is deprecated and its contents have been merged into 0000_init.sql.
+-- You can safely delete this file.

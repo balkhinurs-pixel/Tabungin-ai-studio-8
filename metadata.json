@@ -1,0 +1,10 @@
+{
+  "name": "Tabungin",
+  "description": "Solusi digital cerdas untuk pengelolaan tabungan siswa. Praktis, transparan, dan aman dengan fitur cetak kartu QR, laporan otomatis, dan monitoring saldo real-time.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

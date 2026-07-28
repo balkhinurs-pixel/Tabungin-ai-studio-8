@@ -1,0 +1,3 @@
+-- This file is now deprecated and will be removed.
+-- The contents have been merged into 20240729120006_fix_admin_access_and_rls.sql
+-- to ensure a clean and functional migration path.

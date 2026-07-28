@@ -1,0 +1,25 @@
+
+{
+  "name": "Tabungin",
+  "short_name": "Tabungin",
+  "description": "Aplikasi tabungan siswa modern untuk pengelolaan keuangan yang lebih mudah dan transparan.",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#3B82F6",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/logo192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/logo512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

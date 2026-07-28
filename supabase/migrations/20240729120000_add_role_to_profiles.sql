@@ -1,0 +1,3 @@
+-- This migration is intentionally left empty as its contents have been consolidated 
+-- into 20240729123000_consolidated_auth_updates.sql for a cleaner setup.
+-- Keeping the file prevents errors if the migration has been run before.
