@@ -16,7 +16,9 @@ import {
   Calendar as CalendarIcon,
   ChevronLeft,
   ChevronRight,
-  ShieldEllipsis
+  ShieldEllipsis,
+  Download,
+  FileText
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -28,9 +30,13 @@ import { cn } from '@/lib/utils';
 import type { Transaction } from '@/types';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
+import { useToast } from '@/hooks/use-toast';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 export default function TodayTransactionsPage() {
   const supabase = createClient();
+  const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -82,6 +88,101 @@ export default function TodayTransactionsPage() {
   const handleNextDay = () => setSelectedDate(prev => addDays(prev, 1));
   const handleGoToToday = () => setSelectedDate(new Date());
 
+  const handleDownloadPdf = () => {
+    if (!transactions || transactions.length === 0) {
+      toast({
+        variant: 'destructive',
+        title: 'Tidak Ada Transaksi',
+        description: 'Tidak ada data transaksi yang dapat dicetak pada tanggal ini.',
+      });
+      return;
+    }
+
+    try {
+      const doc = new jsPDF();
+      const formattedDate = format(selectedDate, 'EEEE, dd MMMM yyyy', { locale: id });
+      const netTotal = totals.income - totals.expense;
+
+      doc.setFontSize(16);
+      doc.setFont('helvetica', 'bold');
+      doc.text('LAPORAN JURNAL TRANSAKSI', 105, 15, { align: 'center' });
+
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Tanggal: ${formattedDate}`, 105, 22, { align: 'center' });
+
+      const tableBody = transactions.map((tx, index) => [
+        index + 1,
+        format(new Date(tx.created_at!), 'HH:mm'),
+        tx.students?.name || 'Siswa',
+        getCategoryLabel(tx.category),
+        tx.type,
+        tx.description || '-',
+        {
+          content: `${tx.type === 'Pemasukan' ? '+' : '-'} Rp ${tx.amount.toLocaleString('id-ID')}`,
+          styles: {
+            halign: 'right' as const,
+            textColor: tx.type === 'Pemasukan' ? [16, 185, 129] : [225, 29, 72],
+            fontStyle: 'bold' as const,
+          },
+        },
+      ]);
+
+      autoTable(doc, {
+        startY: 28,
+        head: [['NO', 'WAKTU', 'NAMA TRANSAKSI', 'KATEGORI', 'JENIS', 'KETERANGAN', 'JUMLAH']],
+        body: tableBody,
+        foot: [
+          [
+            { content: 'Total Setoran (Pemasukan)', colSpan: 6, styles: { fontStyle: 'bold', halign: 'right' } },
+            { content: `Rp ${totals.income.toLocaleString('id-ID')}`, styles: { halign: 'right', fontStyle: 'bold', textColor: [16, 185, 129] } },
+          ],
+          [
+            { content: 'Total Penarikan (Pengeluaran)', colSpan: 6, styles: { fontStyle: 'bold', halign: 'right' } },
+            { content: `Rp ${totals.expense.toLocaleString('id-ID')}`, styles: { halign: 'right', fontStyle: 'bold', textColor: [225, 29, 72] } },
+          ],
+          [
+            { content: 'Total Akhir (Selisih Net)', colSpan: 6, styles: { fontStyle: 'bold', halign: 'right' } },
+            {
+              content: `${netTotal < 0 ? '- ' : ''}Rp ${Math.abs(netTotal).toLocaleString('id-ID')}`,
+              styles: {
+                halign: 'right',
+                fontStyle: 'bold',
+                textColor: netTotal >= 0 ? [37, 99, 235] : [180, 83, 9],
+              },
+            },
+          ],
+        ],
+        headStyles: { fillColor: [29, 78, 133], textColor: [255, 255, 255], fontStyle: 'bold' },
+        footStyles: { fillColor: [248, 250, 252], textColor: [15, 23, 42] },
+        theme: 'grid',
+        styles: { fontSize: 8, cellPadding: 3 },
+        columnStyles: {
+          0: { cellWidth: 10, halign: 'center' },
+          1: { cellWidth: 16, halign: 'center' },
+          2: { cellWidth: 38 },
+          3: { cellWidth: 22 },
+          4: { cellWidth: 22 },
+          5: { cellWidth: 44 },
+          6: { cellWidth: 38 },
+        },
+      });
+
+      doc.save(`jurnal-transaksi-${format(selectedDate, 'yyyyMMdd')}.pdf`);
+      toast({
+        title: 'PDF Berhasil Diunduh',
+        description: `Laporan jurnal transaksi ${format(selectedDate, 'dd/MM/yyyy')} telah dibuat.`,
+      });
+    } catch (err) {
+      console.error('PDF generation error:', err);
+      toast({
+        variant: 'destructive',
+        title: 'Gagal Membuat PDF',
+        description: 'Terjadi kesalahan saat memproses laporan PDF.',
+      });
+    }
+  };
+
   const getCategoryIcon = (category: string) => {
     switch (category) {
         case 'BELANJA_KANTIN': return <UtensilsCrossed className="h-3 w-3" />;
@@ -104,16 +205,27 @@ export default function TodayTransactionsPage() {
     <div className="space-y-6 pb-24">
       {/* Header & Date Picker */}
       <div className="flex flex-col gap-4">
-        <div className="flex items-center gap-4">
-            <Button variant="outline" size="icon" asChild className="rounded-full">
-                <Link href="/dashboard">
-                    <ArrowLeft className="h-4 w-4" />
-                </Link>
-            </Button>
-            <div>
-                <h2 className="text-xl font-bold tracking-tight">Jurnal Transaksi</h2>
-                <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest">Riwayat Harian Siswa</p>
+        <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+                <Button variant="outline" size="icon" asChild className="rounded-full shrink-0">
+                    <Link href="/dashboard">
+                        <ArrowLeft className="h-4 w-4" />
+                    </Link>
+                </Button>
+                <div>
+                    <h2 className="text-xl font-bold tracking-tight">Jurnal Transaksi</h2>
+                    <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest">Riwayat Harian Siswa</p>
+                </div>
             </div>
+            <Button 
+                onClick={handleDownloadPdf}
+                disabled={loading || transactions.length === 0}
+                className="bg-primary hover:bg-primary/90 text-white rounded-2xl font-bold text-xs h-10 px-4 shadow-sm gap-2 shrink-0"
+            >
+                <Download className="h-4 w-4" />
+                <span className="hidden sm:inline">Laporan PDF</span>
+                <span className="sm:hidden">PDF</span>
+            </Button>
         </div>
 
         <div className="flex items-center justify-between bg-white p-2 rounded-2xl shadow-sm border border-gray-100">
@@ -205,11 +317,22 @@ export default function TodayTransactionsPage() {
       })()}
 
       <Card className="border-none shadow-sm rounded-[2rem] overflow-hidden">
-          <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-bold flex items-center gap-2">
-                  <History className="h-4 w-4 text-primary" /> Rincian Aktivitas
-              </CardTitle>
-              <CardDescription className="text-[10px]">Menampilkan data pada tanggal yang dipilih.</CardDescription>
+          <CardHeader className="pb-2 flex flex-row items-center justify-between">
+              <div>
+                  <CardTitle className="text-sm font-bold flex items-center gap-2">
+                      <History className="h-4 w-4 text-primary" /> Rincian Aktivitas
+                  </CardTitle>
+                  <CardDescription className="text-[10px]">Menampilkan data pada tanggal yang dipilih.</CardDescription>
+              </div>
+              <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleDownloadPdf}
+                  disabled={loading || transactions.length === 0}
+                  className="rounded-xl text-xs font-bold gap-1.5 h-8 border-primary/20 text-primary hover:bg-primary/5"
+              >
+                  <Download className="h-3.5 w-3.5" /> Cetak PDF
+              </Button>
           </CardHeader>
           <CardContent className="px-2">
               {loading ? (
