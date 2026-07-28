@@ -26,9 +26,18 @@ import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { getStudentKioskData, processKioskWithdrawal } from './actions';
 
-type KioskState = 'SCANNING' | 'MAIN_MENU' | 'PIN_INPUT' | 'WITHDRAW_MENU' | 'CUSTOM_AMOUNT' | 'PROCESSING' | 'SUCCESS' | 'ERROR';
+type KioskState = 'SCANNING' | 'MAIN_MENU' | 'PIN_INPUT' | 'WITHDRAW_MENU' | 'CUSTOM_AMOUNT' | 'REASON_SELECTION' | 'PROCESSING' | 'SUCCESS' | 'ERROR';
 
 const QUICK_AMOUNTS = [5000, 10000, 20000, 50000];
+
+const PRESET_REASONS = [
+  { label: 'Uang Saku / Jajan', icon: '🍔' },
+  { label: 'Beli Alat Tulis', icon: '✏️' },
+  { label: 'Ongkos Pulang', icon: '🚌' },
+  { label: 'Iuran / Kegiatan', icon: '📋' },
+  { label: 'Kebutuhan Sekolah', icon: '🎒' },
+  { label: 'Lainnya', icon: '💬' },
+];
 
 export default function KioskPage() {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -43,6 +52,8 @@ export default function KioskPage() {
   const [student, setStudent] = useState<any>(null);
   const [pin, setPin] = useState('');
   const [amount, setAmount] = useState<number>(0);
+  const [reason, setReason] = useState('Uang Saku / Jajan');
+  const [isCustomReason, setIsCustomReason] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [lastWithdrawal, setLastWithdrawal] = useState<number | null>(null);
   const [cameraRetryCount, setCameraRetryCount] = useState(0);
@@ -203,15 +214,18 @@ export default function KioskPage() {
     }
   };
 
-  const handleWithdraw = async (withAmount: number) => {
+  const handleWithdraw = async (withAmount: number, withDescription?: string) => {
     setKioskState('PROCESSING');
     
+    const targetDesc = withDescription !== undefined ? withDescription : reason;
+
     const result = await processKioskWithdrawal({
         studentId: student.id,
         nis: student.nis,
         schoolCode: student.schoolCode,
         pin: pin,
-        amount: withAmount
+        amount: withAmount,
+        description: targetDesc
     });
 
     if (result.success) {
@@ -230,6 +244,8 @@ export default function KioskPage() {
     setStudent(null);
     setPin('');
     setAmount(0);
+    setReason('Uang Saku / Jajan');
+    setIsCustomReason(false);
     setErrorMessage('');
     setLastWithdrawal(null);
     processingRef.current = false;
@@ -433,7 +449,12 @@ export default function KioskPage() {
                                 key={amt}
                                 disabled={amt > student.balance}
                                 className="h-28 rounded-[2.5rem] bg-white/10 border border-white/20 text-white text-2xl font-black hover:bg-white shadow-2xl hover:text-primary transition-all active:scale-90 disabled:opacity-20"
-                                onClick={() => handleWithdraw(amt)}
+                                onClick={() => {
+                                    setAmount(amt);
+                                    setReason('Uang Saku / Jajan');
+                                    setIsCustomReason(false);
+                                    setKioskState('REASON_SELECTION');
+                                }}
                             >
                                 {amt.toLocaleString('id-ID')}
                             </Button>
@@ -500,9 +521,91 @@ export default function KioskPage() {
                         <Button 
                             className="flex-1 h-16 rounded-[2rem] bg-white text-primary font-black text-lg shadow-2xl"
                             disabled={amount <= 0 || amount > student.balance}
-                            onClick={() => handleWithdraw(amount)}
+                            onClick={() => {
+                                setReason('Uang Saku / Jajan');
+                                setIsCustomReason(false);
+                                setKioskState('REASON_SELECTION');
+                            }}
                         >
-                            TARIK DANA
+                            LANJUTKAN
+                        </Button>
+                    </div>
+                </div>
+            )}
+
+            {/* 5.5. STATE: REASON SELECTION */}
+            {kioskState === 'REASON_SELECTION' && (
+                <div className="w-full max-w-md flex flex-col items-center space-y-6 animate-in slide-in-from-right-12 duration-500">
+                    <div className="text-center w-full">
+                        <h2 className="text-2xl font-black text-white tracking-tight mb-1 uppercase">Keperluan Penarikan</h2>
+                        <p className="text-white/40 text-xs font-bold">Pilih atau ketik alasan penarikan dana</p>
+                        
+                        <div className="mt-4 bg-white/10 p-4 rounded-2xl border border-white/20 flex items-center justify-between px-6">
+                            <span className="text-white/50 text-xs font-bold uppercase tracking-wider">Jumlah Ditarik</span>
+                            <span className="text-2xl font-black text-white">{formatCurrency(amount)}</span>
+                        </div>
+                    </div>
+
+                    {/* Preset Chips */}
+                    <div className="grid grid-cols-2 gap-3 w-full">
+                        {PRESET_REASONS.map((preset) => {
+                            const isSelected = !isCustomReason && reason === preset.label;
+                            const isLainnya = preset.label === 'Lainnya';
+                            return (
+                                <Button
+                                    key={preset.label}
+                                    type="button"
+                                    variant="outline"
+                                    className={cn(
+                                        "h-14 rounded-2xl border text-left justify-start px-4 transition-all flex items-center gap-3",
+                                        (isSelected || (isLainnya && isCustomReason))
+                                            ? "bg-primary border-primary text-white font-black shadow-lg shadow-primary/30 scale-[1.02]"
+                                            : "bg-white/5 border-white/10 text-white/80 font-bold hover:bg-white/10 hover:text-white"
+                                    )}
+                                    onClick={() => {
+                                        if (isLainnya) {
+                                            setIsCustomReason(true);
+                                            setReason('');
+                                        } else {
+                                            setIsCustomReason(false);
+                                            setReason(preset.label);
+                                        }
+                                    }}
+                                >
+                                    <span className="text-xl">{preset.icon}</span>
+                                    <span className="text-xs truncate">{preset.label}</span>
+                                </Button>
+                            );
+                        })}
+                    </div>
+
+                    {/* Custom Input Field */}
+                    <div className="w-full space-y-2">
+                        <input
+                            type="text"
+                            value={reason}
+                            onChange={(e) => {
+                                setReason(e.target.value);
+                            }}
+                            placeholder="Ketik keterangan khusus di sini..."
+                            className="w-full h-14 bg-white/10 border border-white/20 rounded-2xl px-5 text-white font-bold placeholder:text-white/30 text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/50 transition-all"
+                        />
+                    </div>
+
+                    <div className="flex gap-4 w-full pt-2">
+                        <Button
+                            variant="outline"
+                            className="flex-1 h-16 rounded-[2rem] bg-white/5 border-white/10 text-white font-black text-base uppercase"
+                            onClick={() => setKioskState('WITHDRAW_MENU')}
+                        >
+                            Kembali
+                        </Button>
+                        <Button
+                            className="flex-1 h-16 rounded-[2rem] bg-primary text-white font-black text-base uppercase shadow-2xl hover:bg-primary/90"
+                            disabled={!reason.trim()}
+                            onClick={() => handleWithdraw(amount, reason.trim())}
+                        >
+                            PROSES TARIK
                         </Button>
                     </div>
                 </div>
@@ -548,6 +651,10 @@ export default function KioskPage() {
                                     <div className="flex justify-between items-center text-sm font-bold text-gray-500">
                                         <span className="uppercase tracking-[0.2em] text-[10px] text-gray-400">Nama Siswa</span>
                                         <span className="text-gray-900 font-black truncate max-w-[180px] uppercase">{student.name}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center text-sm font-bold text-gray-500">
+                                        <span className="uppercase tracking-[0.2em] text-[10px] text-gray-400">Keterangan</span>
+                                        <span className="text-gray-900 font-black truncate max-w-[180px] uppercase">{reason}</span>
                                     </div>
                                 </div>
                                 <Button 

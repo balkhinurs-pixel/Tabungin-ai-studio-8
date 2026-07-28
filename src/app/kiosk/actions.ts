@@ -67,8 +67,9 @@ export async function processKioskWithdrawal(params: {
     schoolCode: string;
     pin: string;
     amount: number;
+    description?: string;
 }) {
-    const { studentId, nis, schoolCode, pin, amount } = params;
+    const { studentId, nis, schoolCode, pin, amount, description } = params;
     const supabaseAdmin = getSupabaseAdmin();
     
     try {
@@ -137,6 +138,10 @@ export async function processKioskWithdrawal(params: {
             }
         }
 
+        const formattedDescription = description && description.trim() !== '' 
+            ? `Tarik Tunai - ${description.trim()}`
+            : 'Tarik Tunai via Kios ATM';
+
         // 3. Catat Transaksi Penarikan
         const { error: txError } = await supabaseAdmin.from('transactions').insert({
             student_id: studentId,
@@ -144,7 +149,7 @@ export async function processKioskWithdrawal(params: {
             amount: amount,
             type: 'Pengeluaran',
             category: 'TARIK_TUNAI',
-            description: 'Tarik Tunai via Kios ATM'
+            description: formattedDescription
         });
 
         if (txError) throw txError;

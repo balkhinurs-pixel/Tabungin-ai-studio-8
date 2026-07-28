@@ -122,7 +122,7 @@ export default function TodayTransactionsPage() {
           content: `${tx.type === 'Pemasukan' ? '+' : '-'} Rp ${tx.amount.toLocaleString('id-ID')}`,
           styles: {
             halign: 'right' as const,
-            textColor: tx.type === 'Pemasukan' ? [16, 185, 129] : [225, 29, 72],
+            textColor: (tx.type === 'Pemasukan' ? [16, 185, 129] : [225, 29, 72]) as [number, number, number],
             fontStyle: 'bold' as const,
           },
         },
@@ -131,15 +131,15 @@ export default function TodayTransactionsPage() {
       autoTable(doc, {
         startY: 28,
         head: [['NO', 'WAKTU', 'NAMA TRANSAKSI', 'KATEGORI', 'JENIS', 'KETERANGAN', 'JUMLAH']],
-        body: tableBody,
+        body: tableBody as any,
         foot: [
           [
             { content: 'Total Setoran (Pemasukan)', colSpan: 6, styles: { fontStyle: 'bold', halign: 'right' } },
-            { content: `Rp ${totals.income.toLocaleString('id-ID')}`, styles: { halign: 'right', fontStyle: 'bold', textColor: [16, 185, 129] } },
+            { content: `Rp ${totals.income.toLocaleString('id-ID')}`, styles: { halign: 'right', fontStyle: 'bold', textColor: [16, 185, 129] as [number, number, number] } },
           ],
           [
             { content: 'Total Penarikan (Pengeluaran)', colSpan: 6, styles: { fontStyle: 'bold', halign: 'right' } },
-            { content: `Rp ${totals.expense.toLocaleString('id-ID')}`, styles: { halign: 'right', fontStyle: 'bold', textColor: [225, 29, 72] } },
+            { content: `Rp ${totals.expense.toLocaleString('id-ID')}`, styles: { halign: 'right', fontStyle: 'bold', textColor: [225, 29, 72] as [number, number, number] } },
           ],
           [
             { content: 'Total Akhir (Selisih Net)', colSpan: 6, styles: { fontStyle: 'bold', halign: 'right' } },
@@ -148,7 +148,7 @@ export default function TodayTransactionsPage() {
               styles: {
                 halign: 'right',
                 fontStyle: 'bold',
-                textColor: netTotal >= 0 ? [37, 99, 235] : [180, 83, 9],
+                textColor: (netTotal >= 0 ? [37, 99, 235] : [180, 83, 9]) as [number, number, number],
               },
             },
           ],
