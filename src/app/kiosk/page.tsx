@@ -67,7 +67,8 @@ export default function KioskPage() {
   const lastKeyTimeRef = useRef(0);
   const [isCashcowReading, setIsCashcowReading] = useState(false);
   const [manualInputOpen, setManualInputOpen] = useState(false);
-  const [manualCode, setManualCode] = useState('');
+  const [manualNis, setManualNis] = useState('');
+  const [manualSchoolCode, setManualSchoolCode] = useState('');
   const [activeScanMode, setActiveScanMode] = useState<'DEVICE' | 'CAMERA'>('DEVICE');
   const deviceInputRef = useRef<HTMLInputElement>(null);
   const [deviceInputVal, setDeviceInputVal] = useState('');
@@ -634,43 +635,58 @@ export default function KioskPage() {
                                 className="text-white/50 text-[11px] font-bold h-9 px-4 rounded-full hover:text-white hover:bg-white/10 transition-colors"
                                 onClick={() => setManualInputOpen(true)}
                             >
-                                <Keyboard className="mr-2 h-3.5 w-3.5" /> Ketik NIS / Kode QR Manual
+                                <Keyboard className="mr-2 h-3.5 w-3.5" /> Ketik NIS / Kode Sekolah Manual
                             </Button>
                         ) : (
                             <form 
                                 onSubmit={(e) => {
                                     e.preventDefault();
-                                    if (manualCode.trim()) {
-                                        handleScanResult(manualCode.trim());
-                                        setManualCode('');
+                                    if (manualNis.trim()) {
+                                        const finalCode = manualSchoolCode.trim() 
+                                            ? `${manualNis.trim()},${manualSchoolCode.trim()}`
+                                            : manualNis.trim();
+                                        handleScanResult(finalCode);
+                                        setManualNis('');
+                                        setManualSchoolCode('');
                                         setManualInputOpen(false);
                                     }
                                 }}
-                                className="flex items-center gap-2 max-w-xs mx-auto animate-in slide-in-from-bottom-2 duration-300"
+                                className="flex flex-col sm:flex-row items-center gap-2 max-w-md mx-auto p-3 bg-slate-900/90 border border-white/20 rounded-2xl backdrop-blur-xl animate-in slide-in-from-bottom-2 duration-300 shadow-2xl"
                             >
-                                <input
-                                    type="text"
-                                    value={manualCode}
-                                    onChange={(e) => setManualCode(e.target.value)}
-                                    placeholder="Masukkan NIS / Kode QR..."
-                                    autoFocus
-                                    className="flex-1 h-11 bg-white/10 border border-white/20 rounded-xl px-4 text-white text-xs font-bold focus:outline-none focus:border-primary"
-                                />
-                                <Button 
-                                    type="submit" 
-                                    disabled={!manualCode.trim()} 
-                                    className="h-11 px-4 rounded-xl bg-primary text-white font-black text-xs uppercase"
-                                >
-                                    Cari
-                                </Button>
-                                <Button 
-                                    type="button" 
-                                    variant="ghost" 
-                                    onClick={() => setManualInputOpen(false)}
-                                    className="h-11 w-11 p-0 rounded-xl bg-white/5 text-white/50 hover:text-white"
-                                >
-                                    <XCircle className="h-5 w-5" />
-                                </Button>
+                                <div className="flex-1 w-full space-y-2 sm:space-y-0 sm:flex sm:gap-2">
+                                    <input
+                                        type="text"
+                                        value={manualSchoolCode}
+                                        onChange={(e) => setManualSchoolCode(e.target.value)}
+                                        placeholder="Kode Sekolah (Opsional)"
+                                        className="w-full sm:w-1/3 h-11 bg-white/10 border border-white/20 rounded-xl px-3 text-white text-xs font-bold focus:outline-none focus:border-primary placeholder:text-white/40"
+                                    />
+                                    <input
+                                        type="text"
+                                        value={manualNis}
+                                        onChange={(e) => setManualNis(e.target.value)}
+                                        placeholder="NIS / NISN Siswa..."
+                                        autoFocus
+                                        className="w-full sm:w-2/3 h-11 bg-white/10 border border-white/20 rounded-xl px-3 text-white text-xs font-bold focus:outline-none focus:border-primary placeholder:text-white/40"
+                                    />
+                                </div>
+                                <div className="flex items-center gap-2 w-full sm:w-auto justify-end pt-1 sm:pt-0">
+                                    <Button 
+                                        type="submit" 
+                                        disabled={!manualNis.trim()} 
+                                        className="h-11 px-4 rounded-xl bg-primary text-white font-black text-xs uppercase shadow-md"
+                                    >
+                                        Cari
+                                    </Button>
+                                    <Button 
+                                        type="button" 
+                                        variant="ghost" 
+                                        onClick={() => setManualInputOpen(false)}
+                                        className="h-11 w-11 p-0 rounded-xl bg-white/5 text-white/50 hover:text-white"
+                                    >
+                                        <XCircle className="h-5 w-5" />
+                                    </Button>
+                                </div>
                             </form>
                         )}
                     </div>
