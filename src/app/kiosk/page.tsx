@@ -68,6 +68,35 @@ export default function KioskPage() {
   const [isCashcowReading, setIsCashcowReading] = useState(false);
   const [manualInputOpen, setManualInputOpen] = useState(false);
   const [manualCode, setManualCode] = useState('');
+  const [activeScanMode, setActiveScanMode] = useState<'DEVICE' | 'CAMERA'>('DEVICE');
+  const deviceInputRef = useRef<HTMLInputElement>(null);
+  const [deviceInputVal, setDeviceInputVal] = useState('');
+
+  // Load persistent scan mode from localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem('kiosk_scan_mode');
+    if (saved === 'CAMERA' || saved === 'DEVICE') {
+      setActiveScanMode(saved);
+    }
+  }, []);
+
+  const handleModeChange = (mode: 'DEVICE' | 'CAMERA') => {
+    setActiveScanMode(mode);
+    localStorage.setItem('kiosk_scan_mode', mode);
+  };
+
+  // Continuous Auto-Focus for Device Input in DEVICE mode (Android/iOS Bluetooth wedge friendly)
+  useEffect(() => {
+    if (kioskState === 'SCANNING' && activeScanMode === 'DEVICE' && !manualInputOpen) {
+      const timer = setInterval(() => {
+        if (document.activeElement !== deviceInputRef.current && !manualInputOpen) {
+          deviceInputRef.current?.focus();
+        }
+      }, 400);
+      deviceInputRef.current?.focus();
+      return () => clearInterval(timer);
+    }
+  }, [kioskState, activeScanMode, manualInputOpen]);
 
   const { toast } = useToast();
 
@@ -189,7 +218,7 @@ export default function KioskPage() {
           // Penanganan jika stream terputus di tengah jalan
           stream.getTracks().forEach(track => {
             track.onended = () => {
-                if (kioskState === 'SCANNING') {
+                if (kioskState === 'SCANNING' && activeScanMode === 'CAMERA') {
                     setCameraRetryCount(prev => prev + 1);
                 }
             };
@@ -198,12 +227,16 @@ export default function KioskPage() {
       } catch (error: any) {
         console.error('Error inisialisasi kamera:', error);
         setHasCameraPermission(false);
-        // Jangan tampilkan toast berulang kali jika user menolak secara sengaja
       }
     };
 
-    if (kioskState === 'SCANNING') {
+    if (kioskState === 'SCANNING' && activeScanMode === 'CAMERA') {
         getCameraPermission();
+    } else {
+        if (streamRef.current) {
+            streamRef.current.getTracks().forEach(track => track.stop());
+            streamRef.current = null;
+        }
     }
 
     return () => {
@@ -212,7 +245,7 @@ export default function KioskPage() {
             streamRef.current = null;
         }
     }
-  }, [facingMode, kioskState, cameraRetryCount]);
+  }, [facingMode, kioskState, cameraRetryCount, activeScanMode]);
 
   useEffect(() => {
     let animationFrameId: number;
@@ -226,7 +259,7 @@ export default function KioskPage() {
       }
       lastScanTime = time;
 
-      if (kioskState === 'SCANNING' && !processingRef.current && videoRef.current && videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA && canvasRef.current) {
+      if (kioskState === 'SCANNING' && activeScanMode === 'CAMERA' && !processingRef.current && videoRef.current && videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA && canvasRef.current) {
         const video = videoRef.current;
         const canvas = canvasRef.current;
         const context = canvas.getContext('2d', { willReadFrequently: true });
@@ -262,14 +295,14 @@ export default function KioskPage() {
       animationFrameId = requestAnimationFrame(tick);
     };
 
-    if (hasCameraPermission && kioskState === 'SCANNING') {
+    if (hasCameraPermission && kioskState === 'SCANNING' && activeScanMode === 'CAMERA') {
        animationFrameId = requestAnimationFrame(tick);
     }
    
     return () => {
       cancelAnimationFrame(animationFrameId);
     };
-  }, [hasCameraPermission, facingMode, kioskState]);
+  }, [hasCameraPermission, facingMode, kioskState, activeScanMode]);
 
   const handleScanResult = async (rawData: string) => {
     const data = rawData.trim();
@@ -441,9 +474,11 @@ export default function KioskPage() {
             </div>
             {kioskState === 'SCANNING' && (
                 <div className="flex gap-2">
-                    <Button variant="ghost" className="text-white/60 text-[11px] font-bold rounded-full h-10 px-4 bg-white/10 border border-white/10" onClick={() => setFacingMode(f => f === 'user' ? 'environment' : 'user')}>
-                        <RefreshCw className="mr-2 h-4 w-4" /> Ganti Kamera
-                    </Button>
+                    {activeScanMode === 'CAMERA' && (
+                        <Button variant="ghost" className="text-white/60 text-[11px] font-bold rounded-full h-10 px-4 bg-white/10 border border-white/10" onClick={() => setFacingMode(f => f === 'user' ? 'environment' : 'user')}>
+                            <RefreshCw className="mr-2 h-4 w-4" /> Ganti Kamera
+                        </Button>
+                    )}
                     <Button variant="ghost" className="text-white/60 text-[11px] font-bold rounded-full h-10 px-4 bg-white/10 border border-white/10" asChild>
                         <Link href="/login"><ArrowLeft className="mr-2 h-4 w-4" /> Keluar</Link>
                     </Button>
@@ -456,107 +491,188 @@ export default function KioskPage() {
             
             {/* 1. STATE: SCANNING */}
             {kioskState === 'SCANNING' && (
-                <div className="flex flex-col items-center animate-in fade-in zoom-in-95 duration-700 max-w-lg w-full space-y-6">
-                    {/* Visual Frame Scanner Kamera */}
-                    <div className="relative w-64 h-64 sm:w-80 sm:h-80 border border-white/10 rounded-[3.5rem] flex items-center justify-center overflow-hidden bg-black/40 backdrop-blur-md shadow-2xl">
-                        <div className="absolute top-0 left-0 w-14 h-14 border-t-4 border-l-4 border-primary rounded-tl-[3.5rem]" />
-                        <div className="absolute top-0 right-0 w-14 h-14 border-t-4 border-r-4 border-primary rounded-tr-[3.5rem]" />
-                        <div className="absolute bottom-0 left-0 w-14 h-14 border-b-4 border-l-4 border-primary rounded-bl-[3.5rem]" />
-                        <div className="absolute bottom-0 right-0 w-14 h-14 border-b-4 border-r-4 border-primary rounded-br-[3.5rem]" />
-                        
-                        <div className="absolute w-full h-1.5 bg-primary/80 shadow-[0_0_25px_rgba(59,130,246,1)] animate-[bounce_2.5s_infinite]" />
-                        
-                        <div className="flex flex-col items-center gap-3 text-white/20">
-                            <QrCode className="h-16 w-16" />
-                            <p className="text-[10px] font-black text-center px-8 uppercase tracking-[0.3em]">Arahkan Kartu / QR</p>
-                        </div>
-                    </div>
+                <div className="flex flex-col items-center animate-in fade-in zoom-in-95 duration-500 max-w-lg w-full space-y-6">
                     
-                    {/* Status & Mode Indicators */}
-                    <div className="text-center space-y-4 w-full">
-                        {/* Cashcow USB Device Status Badge */}
-                        <div className={cn(
-                            "inline-flex items-center gap-3 px-6 py-3 rounded-full border transition-all duration-300 shadow-lg backdrop-blur-md",
-                            isCashcowReading 
-                                ? "bg-blue-600/30 border-blue-400 text-blue-200 scale-105 animate-pulse" 
-                                : "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
-                        )}>
-                            <div className="flex items-center gap-1.5">
-                                <Usb className="h-4 w-4" />
-                                <div className={cn(
-                                    "h-2.5 w-2.5 rounded-full",
-                                    isCashcowReading ? "bg-blue-400 animate-ping" : "bg-emerald-400 animate-pulse"
-                                )} />
-                            </div>
-                            <p className="font-black text-[11px] uppercase tracking-widest">
-                                {isCashcowReading ? 'Cashcow Scanner: Membaca...' : 'Cashcow USB Scanner: Siap'}
-                            </p>
-                        </div>
-
-                        {/* Detail Panduan */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 px-2">
-                            <div className="flex items-center gap-3 px-4 py-3 bg-white/5 rounded-2xl border border-white/10 backdrop-blur-xl">
-                                <Usb className="h-5 w-5 text-emerald-400 shrink-0" />
-                                <p className="text-white/70 text-[10px] font-bold uppercase tracking-wider text-left leading-relaxed">
-                                    Dekatkan ke <br/><span className="text-emerald-400 font-extrabold">Mesin Cashcow USB</span>
-                                </p>
-                            </div>
-                            <div className="flex items-center gap-3 px-4 py-3 bg-white/5 rounded-2xl border border-white/10 backdrop-blur-xl">
-                                <ScanLine className="h-5 w-5 text-primary shrink-0" />
-                                <p className="text-white/70 text-[10px] font-bold uppercase tracking-wider text-left leading-relaxed">
-                                    Atau Hadapkan ke <br/><span className="text-primary font-extrabold">Kamera Depan</span>
-                                </p>
-                            </div>
-                        </div>
-
-                        {/* Manual Code Input Button */}
-                        <div className="pt-2">
-                            {!manualInputOpen ? (
-                                <Button 
-                                    variant="ghost" 
-                                    className="text-white/50 text-[11px] font-bold h-9 px-4 rounded-full hover:text-white hover:bg-white/10 transition-colors"
-                                    onClick={() => setManualInputOpen(true)}
-                                >
-                                    <Keyboard className="mr-2 h-3.5 w-3.5" /> Ketik NIS / Kode QR Manual
-                                </Button>
-                            ) : (
-                                <form 
-                                    onSubmit={(e) => {
-                                        e.preventDefault();
-                                        if (manualCode.trim()) {
-                                            handleScanResult(manualCode.trim());
-                                            setManualCode('');
-                                            setManualInputOpen(false);
-                                        }
-                                    }}
-                                    className="flex items-center gap-2 max-w-xs mx-auto animate-in slide-in-from-bottom-2 duration-300"
-                                >
-                                    <input
-                                        type="text"
-                                        value={manualCode}
-                                        onChange={(e) => setManualCode(e.target.value)}
-                                        placeholder="Masukkan NIS / Kode QR..."
-                                        autoFocus
-                                        className="flex-1 h-11 bg-white/10 border border-white/20 rounded-xl px-4 text-white text-xs font-bold focus:outline-none focus:border-primary"
-                                    />
-                                    <Button 
-                                        type="submit" 
-                                        disabled={!manualCode.trim()} 
-                                        className="h-11 px-4 rounded-xl bg-primary text-white font-black text-xs uppercase"
-                                    >
-                                        Cari
-                                    </Button>
-                                    <Button 
-                                        type="button" 
-                                        variant="ghost" 
-                                        onClick={() => setManualInputOpen(false)}
-                                        className="h-11 w-11 p-0 rounded-xl bg-white/5 text-white/50 hover:text-white"
-                                    >
-                                        <XCircle className="h-5 w-5" />
-                                    </Button>
-                                </form>
+                    {/* Tab Switcher Mode Scan */}
+                    <div className="flex items-center justify-center p-1.5 bg-black/60 backdrop-blur-2xl border border-white/10 rounded-2xl max-w-sm w-full mx-auto shadow-xl">
+                        <button
+                            type="button"
+                            onClick={() => handleModeChange('DEVICE')}
+                            className={cn(
+                                "flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-bold transition-all duration-300",
+                                activeScanMode === 'DEVICE'
+                                    ? "bg-emerald-500 text-slate-950 font-black shadow-[0_0_25px_rgba(16,185,129,0.4)] scale-100"
+                                    : "text-white/60 hover:text-white hover:bg-white/5"
                             )}
+                        >
+                            <Usb className="h-4 w-4" />
+                            <span>Scanner Device</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => handleModeChange('CAMERA')}
+                            className={cn(
+                                "flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-bold transition-all duration-300",
+                                activeScanMode === 'CAMERA'
+                                    ? "bg-blue-600 text-white font-black shadow-[0_0_25px_rgba(37,99,235,0.4)] scale-100"
+                                    : "text-white/60 hover:text-white hover:bg-white/5"
+                            )}
+                        >
+                            <QrCode className="h-4 w-4" />
+                            <span>Kamera Web / HP</span>
+                        </button>
+                    </div>
+
+                    {/* TAMPILAN MODE 1: SCANNER HARDWARE / DEVICE (BLUETOOTH / USB) */}
+                    {activeScanMode === 'DEVICE' && (
+                        <div className="relative w-full bg-slate-900/80 border border-emerald-500/20 rounded-[2.5rem] p-8 flex flex-col items-center text-center backdrop-blur-2xl shadow-2xl space-y-6 animate-in fade-in duration-300">
+                            {/* Input Tersembunyi Khusus HP Android/iOS (inputMode="none" cegah Soft Keyboard) */}
+                            <input
+                                ref={deviceInputRef}
+                                type="text"
+                                inputMode="none"
+                                value={deviceInputVal}
+                                onChange={(e) => {
+                                    setDeviceInputVal(e.target.value);
+                                    setIsCashcowReading(true);
+                                }}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        const code = deviceInputVal.trim();
+                                        setDeviceInputVal('');
+                                        if (code && !processingRef.current) {
+                                            processingRef.current = true;
+                                            setIsCashcowReading(true);
+                                            handleScanResult(code);
+                                        }
+                                    }
+                                }}
+                                className="absolute opacity-0 pointer-events-none -z-10 w-1 h-1"
+                                autoComplete="off"
+                            />
+
+                            <div className="relative my-2">
+                                <div className="w-28 h-28 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shadow-[0_0_40px_rgba(16,185,129,0.2)]">
+                                    <Usb className="h-12 w-12 animate-pulse" />
+                                </div>
+                                <div className="absolute -bottom-1 -right-1 bg-emerald-500 text-slate-950 p-2 rounded-full font-bold shadow-lg">
+                                    <CheckCircle2 className="h-5 w-5" />
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <div className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-emerald-500/10 border border-emerald-500/30 rounded-full text-emerald-400 text-[10px] font-black uppercase tracking-widest">
+                                    <span className="h-2 w-2 rounded-full bg-emerald-400 animate-ping" />
+                                    Scanner Physical / Bluetooth Siap
+                                </div>
+                                <h2 className="text-xl font-black text-white">Arahkan ke Scanner HC-P10</h2>
+                                <p className="text-xs text-white/60 font-medium leading-relaxed max-w-xs mx-auto">
+                                    Dekatkan kartu QR / Barcode siswa ke modul sensor. Tanpa lag beban kamera!
+                                </p>
+                            </div>
+
+                            {/* Status Indikator Pembacaan */}
+                            <div className={cn(
+                                "w-full py-3.5 px-4 rounded-2xl border text-xs font-bold transition-all duration-300 flex items-center justify-center gap-2.5",
+                                isCashcowReading 
+                                    ? "bg-blue-600/30 border-blue-400 text-blue-200 animate-pulse scale-102" 
+                                    : "bg-white/5 border-white/10 text-white/70"
+                            )}>
+                                {isCashcowReading ? (
+                                    <>
+                                        <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
+                                        <span>Membaca Kode Barcode / QR...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <span className="h-2.5 w-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                                        <span>Status: Standby (Sensitivitas Tinggi)</span>
+                                    </>
+                                )}
+                            </div>
+
+                            <div className="pt-2 text-left bg-white/5 border border-white/10 rounded-2xl p-4 w-full text-[10px] text-white/50 space-y-1">
+                                <p className="font-bold text-white/80">💡 Informasi Mode Device:</p>
+                                <p>• Sangat cepat & hemat baterai/CPU laptop & HP.</p>
+                                <p>• Jika memakai HP Android Bluetooth: Atur Layout Keyboard Fisik ke Default di HP jika belum muncul.</p>
+                            </div>
                         </div>
+                    )}
+
+                    {/* TAMPILAN MODE 2: KAMERA WEB / HP */}
+                    {activeScanMode === 'CAMERA' && (
+                        <div className="flex flex-col items-center w-full space-y-6 animate-in fade-in duration-300">
+                            {/* Visual Frame Scanner Kamera */}
+                            <div className="relative w-64 h-64 sm:w-80 sm:h-80 border border-white/10 rounded-[3.5rem] flex items-center justify-center overflow-hidden bg-black/40 backdrop-blur-md shadow-2xl">
+                                <div className="absolute top-0 left-0 w-14 h-14 border-t-4 border-l-4 border-primary rounded-tl-[3.5rem]" />
+                                <div className="absolute top-0 right-0 w-14 h-14 border-t-4 border-r-4 border-primary rounded-tr-[3.5rem]" />
+                                <div className="absolute bottom-0 left-0 w-14 h-14 border-b-4 border-l-4 border-primary rounded-bl-[3.5rem]" />
+                                <div className="absolute bottom-0 right-0 w-14 h-14 border-b-4 border-r-4 border-primary rounded-br-[3.5rem]" />
+                                
+                                <div className="absolute w-full h-1.5 bg-primary/80 shadow-[0_0_25px_rgba(59,130,246,1)] animate-[bounce_2.5s_infinite]" />
+                                
+                                <div className="flex flex-col items-center gap-3 text-white/20">
+                                    <QrCode className="h-16 w-16" />
+                                    <p className="text-[10px] font-black text-center px-8 uppercase tracking-[0.3em]">Hadapkan Kartu QR ke Kamera</p>
+                                </div>
+                            </div>
+
+                            <div className="text-center space-y-2">
+                                <p className="text-xs text-white/70 font-semibold">
+                                    Arahkan kode QR kartu siswa ke lensa kamera laptop / HP Anda
+                                </p>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Manual Code Input Button */}
+                    <div className="pt-2 w-full text-center">
+                        {!manualInputOpen ? (
+                            <Button 
+                                variant="ghost" 
+                                className="text-white/50 text-[11px] font-bold h-9 px-4 rounded-full hover:text-white hover:bg-white/10 transition-colors"
+                                onClick={() => setManualInputOpen(true)}
+                            >
+                                <Keyboard className="mr-2 h-3.5 w-3.5" /> Ketik NIS / Kode QR Manual
+                            </Button>
+                        ) : (
+                            <form 
+                                onSubmit={(e) => {
+                                    e.preventDefault();
+                                    if (manualCode.trim()) {
+                                        handleScanResult(manualCode.trim());
+                                        setManualCode('');
+                                        setManualInputOpen(false);
+                                    }
+                                }}
+                                className="flex items-center gap-2 max-w-xs mx-auto animate-in slide-in-from-bottom-2 duration-300"
+                            >
+                                <input
+                                    type="text"
+                                    value={manualCode}
+                                    onChange={(e) => setManualCode(e.target.value)}
+                                    placeholder="Masukkan NIS / Kode QR..."
+                                    autoFocus
+                                    className="flex-1 h-11 bg-white/10 border border-white/20 rounded-xl px-4 text-white text-xs font-bold focus:outline-none focus:border-primary"
+                                />
+                                <Button 
+                                    type="submit" 
+                                    disabled={!manualCode.trim()} 
+                                    className="h-11 px-4 rounded-xl bg-primary text-white font-black text-xs uppercase"
+                                >
+                                    Cari
+                                </Button>
+                                <Button 
+                                    type="button" 
+                                    variant="ghost" 
+                                    onClick={() => setManualInputOpen(false)}
+                                    className="h-11 w-11 p-0 rounded-xl bg-white/5 text-white/50 hover:text-white"
+                                >
+                                    <XCircle className="h-5 w-5" />
+                                </Button>
+                            </form>
+                        )}
                     </div>
                 </div>
             )}
