@@ -17,7 +17,11 @@ import {
   ArrowRight,
   XCircle,
   ReceiptText,
-  Info
+  Info,
+  QrCode,
+  Usb,
+  Keyboard,
+  Volume2
 } from 'lucide-react';
 import jsQR from 'jsqr';
 import { useToast } from '@/hooks/use-toast';
@@ -58,7 +62,94 @@ export default function KioskPage() {
   const [lastWithdrawal, setLastWithdrawal] = useState<number | null>(null);
   const [cameraRetryCount, setCameraRetryCount] = useState(0);
 
+  // Cashcow USB Scanner Buffer Refs & States
+  const scanBufferRef = useRef('');
+  const lastKeyTimeRef = useRef(0);
+  const [isCashcowReading, setIsCashcowReading] = useState(false);
+  const [manualInputOpen, setManualInputOpen] = useState(false);
+  const [manualCode, setManualCode] = useState('');
+
   const { toast } = useToast();
+
+  // Audio Beep generator function for Cashcow / Camera scan
+  const playBeep = (type: 'success' | 'error' = 'success') => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+
+      if (type === 'success') {
+        osc.frequency.setValueAtTime(880, ctx.currentTime);
+        gain.gain.setValueAtTime(0.2, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.15);
+      } else {
+        osc.frequency.setValueAtTime(300, ctx.currentTime);
+        gain.gain.setValueAtTime(0.2, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.3);
+      }
+    } catch (e) {
+      console.error('Audio beep error:', e);
+    }
+  };
+
+  // Keyboard wedge listener for Cashcow USB Scanner Device
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      const targetTag = target?.tagName?.toUpperCase();
+      
+      // Do not intercept if student is explicitly typing in text inputs (except in SCANNING state)
+      if (kioskState !== 'SCANNING' && (targetTag === 'INPUT' || targetTag === 'TEXTAREA')) {
+        return;
+      }
+      if (manualInputOpen) return;
+
+      const now = Date.now();
+      const timeDiff = now - lastKeyTimeRef.current;
+      lastKeyTimeRef.current = now;
+
+      // Reset buffer if key gap > 350ms (unless it's Enter)
+      if (timeDiff > 350 && e.key !== 'Enter') {
+        scanBufferRef.current = '';
+      }
+
+      if (e.key === 'Enter') {
+        if (scanBufferRef.current.trim().length > 0) {
+          const scannedData = scanBufferRef.current.trim();
+          scanBufferRef.current = '';
+          e.preventDefault();
+          e.stopPropagation();
+
+          if (!processingRef.current) {
+            processingRef.current = true;
+            setIsCashcowReading(true);
+            handleScanResult(scannedData);
+          }
+        }
+      } else if (e.key.length === 1) {
+        scanBufferRef.current += e.key;
+        setIsCashcowReading(true);
+        const timer = setTimeout(() => setIsCashcowReading(false), 800);
+        return () => clearTimeout(timer);
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown, true);
+    return () => {
+      window.removeEventListener('keydown', handleGlobalKeyDown, true);
+    };
+  }, [kioskState, manualInputOpen]);
 
   // Reset Timer - kembali ke scan jika ditinggalkan
   useEffect(() => {
@@ -180,25 +271,40 @@ export default function KioskPage() {
     };
   }, [hasCameraPermission, facingMode, kioskState]);
 
-  const handleScanResult = async (data: string) => {
-    if (!data.includes(',')) {
-        setTimeout(() => { processingRef.current = false; }, 1000);
+  const handleScanResult = async (rawData: string) => {
+    const data = rawData.trim();
+    if (!data) {
+        setTimeout(() => { processingRef.current = false; setIsCashcowReading(false); }, 1000);
         return;
     }
 
-    const [nis, schoolCode] = data.split(',');
-    if (!nis || !schoolCode) {
-        setTimeout(() => { processingRef.current = false; }, 1000);
+    let nis = '';
+    let schoolCode = '';
+
+    if (data.includes(',')) {
+        const parts = data.split(',');
+        nis = parts[0]?.trim() || '';
+        schoolCode = parts[1]?.trim() || '';
+    } else {
+        nis = data;
+    }
+
+    if (!nis) {
+        setTimeout(() => { processingRef.current = false; setIsCashcowReading(false); }, 1000);
         return;
     }
 
     const result = await getStudentKioskData(nis, schoolCode);
 
     if (result.success && result.data) {
+        playBeep('success');
         setStudent(result.data);
         setKioskState('MAIN_MENU');
         processingRef.current = false;
+        setIsCashcowReading(false);
     } else {
+        playBeep('error');
+        setIsCashcowReading(false);
         toast({
             title: "Kartu Tidak Terdaftar",
             description: result.message || "Data siswa tidak ditemukan.",
@@ -350,32 +456,106 @@ export default function KioskPage() {
             
             {/* 1. STATE: SCANNING */}
             {kioskState === 'SCANNING' && (
-                <div className="flex flex-col items-center animate-in fade-in zoom-in-95 duration-700">
-                    <div className="relative w-72 h-72 sm:w-96 sm:h-96 border border-white/10 rounded-[4rem] flex items-center justify-center overflow-hidden bg-black/40 backdrop-blur-md shadow-2xl">
-                        <div className="absolute top-0 left-0 w-16 h-16 border-t-4 border-l-4 border-primary rounded-tl-[4rem]" />
-                        <div className="absolute top-0 right-0 w-16 h-16 border-t-4 border-r-4 border-primary rounded-tr-[4rem]" />
-                        <div className="absolute bottom-0 left-0 w-16 h-16 border-b-4 border-l-4 border-primary rounded-bl-[4rem]" />
-                        <div className="absolute bottom-0 right-0 w-16 h-16 border-b-4 border-r-4 border-primary rounded-br-[4rem]" />
+                <div className="flex flex-col items-center animate-in fade-in zoom-in-95 duration-700 max-w-lg w-full space-y-6">
+                    {/* Visual Frame Scanner Kamera */}
+                    <div className="relative w-64 h-64 sm:w-80 sm:h-80 border border-white/10 rounded-[3.5rem] flex items-center justify-center overflow-hidden bg-black/40 backdrop-blur-md shadow-2xl">
+                        <div className="absolute top-0 left-0 w-14 h-14 border-t-4 border-l-4 border-primary rounded-tl-[3.5rem]" />
+                        <div className="absolute top-0 right-0 w-14 h-14 border-t-4 border-r-4 border-primary rounded-tr-[3.5rem]" />
+                        <div className="absolute bottom-0 left-0 w-14 h-14 border-b-4 border-l-4 border-primary rounded-bl-[3.5rem]" />
+                        <div className="absolute bottom-0 right-0 w-14 h-14 border-b-4 border-r-4 border-primary rounded-br-[3.5rem]" />
                         
                         <div className="absolute w-full h-1.5 bg-primary/80 shadow-[0_0_25px_rgba(59,130,246,1)] animate-[bounce_2.5s_infinite]" />
                         
-                        <div className="flex flex-col items-center gap-4 text-white/10">
-                            <Wallet className="h-16 w-16" />
-                            <p className="text-[12px] font-black text-center px-12 leading-relaxed uppercase tracking-[0.4em]">Tempelkan Kartu QR</p>
+                        <div className="flex flex-col items-center gap-3 text-white/20">
+                            <QrCode className="h-16 w-16" />
+                            <p className="text-[10px] font-black text-center px-8 uppercase tracking-[0.3em]">Arahkan Kartu / QR</p>
                         </div>
                     </div>
                     
-                    <div className="mt-12 text-center space-y-6">
-                        <div className="inline-flex items-center gap-3 px-6 py-2.5 bg-primary/10 border border-primary/20 rounded-full">
-                            <div className="h-2 w-2 rounded-full bg-primary animate-pulse" />
-                            <p className="text-primary font-black text-[11px] uppercase tracking-widest">Sistem Siap Digunakan</p>
-                        </div>
-                        
-                        <div className="flex items-center gap-4 px-8 py-4 bg-white/5 rounded-[2rem] border border-white/10 backdrop-blur-xl max-w-xs mx-auto">
-                            <Info className="h-6 w-6 text-primary shrink-0" />
-                            <p className="text-white/60 text-[10px] font-bold uppercase tracking-widest leading-relaxed text-left">
-                                Arahkan Kode QR ke arah <br/> kamera dengan jarak ±15cm
+                    {/* Status & Mode Indicators */}
+                    <div className="text-center space-y-4 w-full">
+                        {/* Cashcow USB Device Status Badge */}
+                        <div className={cn(
+                            "inline-flex items-center gap-3 px-6 py-3 rounded-full border transition-all duration-300 shadow-lg backdrop-blur-md",
+                            isCashcowReading 
+                                ? "bg-blue-600/30 border-blue-400 text-blue-200 scale-105 animate-pulse" 
+                                : "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+                        )}>
+                            <div className="flex items-center gap-1.5">
+                                <Usb className="h-4 w-4" />
+                                <div className={cn(
+                                    "h-2.5 w-2.5 rounded-full",
+                                    isCashcowReading ? "bg-blue-400 animate-ping" : "bg-emerald-400 animate-pulse"
+                                )} />
+                            </div>
+                            <p className="font-black text-[11px] uppercase tracking-widest">
+                                {isCashcowReading ? 'Cashcow Scanner: Membaca...' : 'Cashcow USB Scanner: Siap'}
                             </p>
+                        </div>
+
+                        {/* Detail Panduan */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 px-2">
+                            <div className="flex items-center gap-3 px-4 py-3 bg-white/5 rounded-2xl border border-white/10 backdrop-blur-xl">
+                                <Usb className="h-5 w-5 text-emerald-400 shrink-0" />
+                                <p className="text-white/70 text-[10px] font-bold uppercase tracking-wider text-left leading-relaxed">
+                                    Dekatkan ke <br/><span className="text-emerald-400 font-extrabold">Mesin Cashcow USB</span>
+                                </p>
+                            </div>
+                            <div className="flex items-center gap-3 px-4 py-3 bg-white/5 rounded-2xl border border-white/10 backdrop-blur-xl">
+                                <ScanLine className="h-5 w-5 text-primary shrink-0" />
+                                <p className="text-white/70 text-[10px] font-bold uppercase tracking-wider text-left leading-relaxed">
+                                    Atau Hadapkan ke <br/><span className="text-primary font-extrabold">Kamera Depan</span>
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* Manual Code Input Button */}
+                        <div className="pt-2">
+                            {!manualInputOpen ? (
+                                <Button 
+                                    variant="ghost" 
+                                    className="text-white/50 text-[11px] font-bold h-9 px-4 rounded-full hover:text-white hover:bg-white/10 transition-colors"
+                                    onClick={() => setManualInputOpen(true)}
+                                >
+                                    <Keyboard className="mr-2 h-3.5 w-3.5" /> Ketik NIS / Kode QR Manual
+                                </Button>
+                            ) : (
+                                <form 
+                                    onSubmit={(e) => {
+                                        e.preventDefault();
+                                        if (manualCode.trim()) {
+                                            handleScanResult(manualCode.trim());
+                                            setManualCode('');
+                                            setManualInputOpen(false);
+                                        }
+                                    }}
+                                    className="flex items-center gap-2 max-w-xs mx-auto animate-in slide-in-from-bottom-2 duration-300"
+                                >
+                                    <input
+                                        type="text"
+                                        value={manualCode}
+                                        onChange={(e) => setManualCode(e.target.value)}
+                                        placeholder="Masukkan NIS / Kode QR..."
+                                        autoFocus
+                                        className="flex-1 h-11 bg-white/10 border border-white/20 rounded-xl px-4 text-white text-xs font-bold focus:outline-none focus:border-primary"
+                                    />
+                                    <Button 
+                                        type="submit" 
+                                        disabled={!manualCode.trim()} 
+                                        className="h-11 px-4 rounded-xl bg-primary text-white font-black text-xs uppercase"
+                                    >
+                                        Cari
+                                    </Button>
+                                    <Button 
+                                        type="button" 
+                                        variant="ghost" 
+                                        onClick={() => setManualInputOpen(false)}
+                                        className="h-11 w-11 p-0 rounded-xl bg-white/5 text-white/50 hover:text-white"
+                                    >
+                                        <XCircle className="h-5 w-5" />
+                                    </Button>
+                                </form>
+                            )}
                         </div>
                     </div>
                 </div>

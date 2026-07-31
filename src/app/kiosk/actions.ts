@@ -6,11 +6,11 @@ import { createClient } from '@/lib/utils/supabase/server';
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { revalidatePath } from 'next/cache';
 
-export async function getStudentKioskData(nis: string, schoolCode: string) {
+export async function getStudentKioskData(nis: string, schoolCode?: string) {
   const supabaseAdmin = getSupabaseAdmin();
   
   try {
-    const { data, error } = await supabaseAdmin
+    let query = supabaseAdmin
       .from('students')
       .select(`
         id,
@@ -26,9 +26,13 @@ export async function getStudentKioskData(nis: string, schoolCode: string) {
           school_code
         )
       `)
-      .eq('nis', nis.trim())
-      .eq('profiles.school_code', schoolCode.trim().toLowerCase())
-      .maybeSingle();
+      .eq('nis', nis.trim());
+
+    if (schoolCode && schoolCode.trim()) {
+      query = query.eq('profiles.school_code', schoolCode.trim().toLowerCase());
+    }
+
+    const { data, error } = await query.maybeSingle();
 
     if (error) {
       console.error('Kiosk Action Database Error:', error);
