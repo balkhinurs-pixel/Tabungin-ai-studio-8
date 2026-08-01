@@ -60,21 +60,35 @@ export async function getCantineTransactionsAction(filters?: {
 /**
  * Mengambil data ringkas siswa untuk divalidasi di layar POS kasir sebelum minta PIN.
  */
-export async function getStudentDataForPayment(nis: string, schoolCode: string) {
+export async function getStudentDataForPayment(nisInput: string, schoolCodeInput?: string) {
     const supabaseAdmin = getSupabaseAdmin();
     try {
-        const { data, error } = await supabaseAdmin
+        let nis = nisInput.trim();
+        let schoolCode = schoolCodeInput?.trim().toLowerCase() || '';
+
+        // Jika input gabungan seperti "12345,sch001"
+        if (nis.includes(',')) {
+            const parts = nis.split(',');
+            nis = parts[0].trim();
+            schoolCode = parts[1].trim().toLowerCase();
+        }
+
+        let query = supabaseAdmin
             .from('students')
             .select(`
                 id, name, class, nis, daily_limit,
                 transactions (amount, type, created_at),
                 profiles:user_id!inner (school_code)
             `)
-            .eq('nis', nis.trim())
-            .eq('profiles.school_code', schoolCode.trim().toLowerCase())
-            .single();
+            .eq('nis', nis);
         
-        if (error || !data) return { success: false, message: 'Siswa tidak ditemukan di sekolah ini.' };
+        if (schoolCode) {
+            query = query.eq('profiles.school_code', schoolCode);
+        }
+
+        const { data, error } = await query.limit(1).maybeSingle();
+        
+        if (error || !data) return { success: false, message: 'Siswa dengan NIS tersebut tidak ditemukan.' };
 
         const balance = (data.transactions || []).reduce((acc: number, tx: any) => {
             return acc + (tx.type === 'Pemasukan' ? tx.amount : -tx.amount);
@@ -89,7 +103,7 @@ export async function getStudentDataForPayment(nis: string, schoolCode: string) 
                 nis: data.nis,
                 balance: balance,
                 dailyLimit: data.daily_limit,
-                schoolCode: schoolCode.trim().toLowerCase()
+                schoolCode: (data.profiles as any)?.school_code || schoolCode
             }
         };
     } catch (err) {
@@ -421,3 +435,167 @@ export async function processCantinePayment(params: {
         return { success: false, message: 'Gagal: ' + (err.message || 'Error internal') };
     }
 }
+
+/**
+ * Memproses pembayaran TUNAI (Cash) di kasir kantin.
+ * Mengurangi stok barang kantin dan mencatat transaksi penjualan tunai.
+ */
+export async function processCashPaymentAction(params: {
+    amount: number;
+    cashGiven: number;
+    items?: Array<{ id: string; name: string; qty: number; price: number }>;
+    customerName?: string;
+}) {
+    const { amount, cashGiven, items, customerName } = params;
+    const supabaseAdmin = getSupabaseAdmin();
+    const supabaseUser = createClient();
+
+    try {
+        const { data: { user: activeMerchant } } = await supabaseUser.auth.getUser();
+        if (!activeMerchant) return { success: false, message: 'Sesi outlet berakhir.' };
+
+        if (cashGiven < amount) {
+            return { success: false, message: 'Uang tunai yang diterima kurang dari total tagihan.' };
+        }
+
+        // Cek stok item jika ada
+        if (items && items.length > 0) {
+            for (const item of items) {
+                const { data: dbItem } = await supabaseAdmin
+                    .from('canteen_items')
+                    .select('stock, name')
+                    .eq('id', item.id)
+                    .single();
+
+                if (dbItem && dbItem.stock < item.qty) {
+                    return { 
+                        success: false, 
+                        message: `Stok produk "${dbItem.name}" tidak mencukupi (Tersisa: ${dbItem.stock}).` 
+                    };
+                }
+            }
+        }
+
+        const { data: merchantProfile } = await supabaseAdmin
+            .from('profiles')
+            .select('school_name')
+            .eq('id', activeMerchant.id)
+            .single();
+
+        const merchantDisplayName = merchantProfile?.school_name || activeMerchant.email?.split('@')[0].toUpperCase() || 'KANTIN';
+
+        let desc = `Penjualan Tunai: ${customerName || 'Pembeli Tunai'}`;
+        if (items && items.length > 0) {
+            const itemSummary = items.map(i => `${i.name} (${i.qty}x)`).join(', ');
+            desc = `Tunai [${customerName || 'Pembeli'}]: ${itemSummary}`;
+        }
+
+        // Simpan transaksi penjualan tunai
+        const { error: txError } = await supabaseAdmin.from('transactions').insert({
+            user_id: activeMerchant.id,
+            amount: amount,
+            type: 'Pengeluaran',
+            category: 'BELANJA_KANTIN',
+            description: desc,
+            is_settled: true // Langsung lunas untuk tunai
+        });
+
+        if (txError) throw txError;
+
+        // Potong stok item
+        if (items && items.length > 0) {
+            for (const item of items) {
+                const { data: currentItem } = await supabaseAdmin
+                    .from('canteen_items')
+                    .select('stock')
+                    .eq('id', item.id)
+                    .single();
+
+                if (currentItem) {
+                    const newStock = Math.max(0, currentItem.stock - item.qty);
+                    await supabaseAdmin
+                        .from('canteen_items')
+                        .update({ 
+                            stock: newStock, 
+                            is_available: newStock > 0,
+                            updated_at: new Date().toISOString() 
+                        })
+                        .eq('id', item.id);
+                }
+            }
+        }
+
+        revalidatePath('/', 'layout');
+        revalidatePath('/dashboard');
+        revalidatePath('/cantine/menu');
+        revalidatePath('/cantine/history');
+
+        const change = cashGiven - amount;
+        return { 
+            success: true, 
+            message: 'Pembayaran Tunai Berhasil!',
+            change: change 
+        };
+    } catch (err: any) {
+        return { success: false, message: 'Gagal memproses transaksi tunai: ' + (err.message || 'Error internal') };
+    }
+}
+
+/**
+ * Mengambil statistik ringkasan omset penjualan harian & produk terlaris kantin.
+ */
+export async function getCanteenDailySummaryAction() {
+    const supabaseUser = createClient();
+    const { data: { user } } = await supabaseUser.auth.getUser();
+    if (!user) return { todayRevenue: 0, todayCount: 0, topItem: '-' };
+
+    const supabaseAdmin = getSupabaseAdmin();
+    try {
+        const todayStart = new Date();
+        todayStart.setHours(0,0,0,0);
+
+        const { data: txs } = await supabaseAdmin
+            .from('transactions')
+            .select('amount, description, created_at')
+            .eq('user_id', user.id)
+            .eq('category', 'BELANJA_KANTIN')
+            .gte('created_at', todayStart.toISOString());
+
+        if (!txs || txs.length === 0) {
+            return { todayRevenue: 0, todayCount: 0, topItem: '-' };
+        }
+
+        const todayRevenue = txs.reduce((sum, tx) => sum + tx.amount, 0);
+        const todayCount = txs.length;
+
+        // Analisis item paling sering muncul dari deskripsi transaksi
+        const itemFrequency: Record<string, number> = {};
+        txs.forEach(tx => {
+            if (tx.description?.includes(':')) {
+                const parts = tx.description.split(':')[1]?.split(',');
+                parts?.forEach(p => {
+                    const cleanName = p.trim().split('(')[0]?.trim();
+                    if (cleanName) {
+                        itemFrequency[cleanName] = (itemFrequency[cleanName] || 0) + 1;
+                    }
+                });
+            }
+        });
+
+        let topItem = '-';
+        let maxCount = 0;
+        Object.entries(itemFrequency).forEach(([item, count]) => {
+            if (count > maxCount) {
+                maxCount = count;
+                topItem = item;
+            }
+        });
+
+        return { todayRevenue, todayCount, topItem };
+    } catch (err) {
+        console.error('[GET_CANTEEN_DAILY_SUMMARY_ERR]', err);
+        return { todayRevenue: 0, todayCount: 0, topItem: '-' };
+    }
+}
+
+
