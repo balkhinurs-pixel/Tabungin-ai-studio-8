@@ -200,6 +200,45 @@ export async function updateCanteenItemAction(id: string, params: {
 }
 
 /**
+ * Tambah / Kurangi stok secara cepat dari kartu POS/Katalog.
+ */
+export async function quickAdjustStockAction(id: string, delta: number) {
+    const supabaseUser = createClient();
+    const { data: { user } } = await supabaseUser.auth.getUser();
+    if (!user) return { success: false, message: 'Sesi berakhir.' };
+
+    const supabaseAdmin = getSupabaseAdmin();
+    try {
+        const { data: item } = await supabaseAdmin
+            .from('canteen_items')
+            .select('stock')
+            .eq('id', id)
+            .eq('user_id', user.id)
+            .single();
+
+        if (!item) return { success: false, message: 'Menu tidak ditemukan.' };
+
+        const newStock = Math.max(0, item.stock + delta);
+        const { error } = await supabaseAdmin
+            .from('canteen_items')
+            .update({
+                stock: newStock,
+                is_available: newStock > 0,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', id)
+            .eq('user_id', user.id);
+
+        if (error) throw error;
+        revalidatePath('/cantine/menu');
+        revalidatePath('/cantine/payment');
+        return { success: true, message: `Stok diperbarui: ${newStock}`, newStock };
+    } catch (err: any) {
+        return { success: false, message: 'Gagal mengubah stok: ' + (err.message || 'Error internal') };
+    }
+}
+
+/**
  * Menghapus menu kantin.
  */
 export async function deleteCanteenItemAction(id: string) {

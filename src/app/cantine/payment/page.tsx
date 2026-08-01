@@ -331,123 +331,152 @@ export default function CantinePOSPage() {
       <div className="flex-1 flex flex-col items-center justify-center overflow-hidden">
           {/* STEP 1: MODE POS KATALOG BARANG */}
           {state === 'POS_CATALOG' && posMode === 'CATALOG' && (
-            <div className="w-full flex-1 flex flex-col overflow-hidden max-w-lg mx-auto bg-white rounded-3xl border border-gray-200 shadow-sm p-4 space-y-3">
-              {/* Filter & Search Header */}
-              <div className="space-y-2">
-                <div className="relative">
-                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
-                  <Input 
-                    value={catalogSearch}
-                    onChange={(e) => setCatalogSearch(e.target.value)}
-                    placeholder="Cari makanan / minuman..."
-                    className="pl-9 h-9 rounded-xl border-gray-200 text-xs font-bold"
-                  />
-                </div>
-                <div className="flex gap-1.5 overflow-x-auto pb-1">
-                  {['ALL', 'Makanan', 'Minuman', 'Snack'].map(cat => (
-                    <button
-                      key={cat}
-                      type="button"
-                      onClick={() => setActiveCategory(cat)}
-                      className={cn(
-                        "px-3 py-1 rounded-lg text-[11px] font-black whitespace-nowrap transition-all",
-                        activeCategory === cat ? "bg-primary text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                      )}
-                    >
-                      {cat === 'ALL' ? 'Semua' : cat}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Grid Catalog Items */}
-              <div className="flex-1 overflow-y-auto pr-1 space-y-2">
-                {loadingItems ? (
-                  <div className="flex h-40 items-center justify-center">
-                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
+            <div className="w-full flex-1 flex flex-col lg:flex-row overflow-hidden max-w-lg lg:max-w-5xl mx-auto bg-white rounded-3xl border border-gray-200 shadow-sm p-4 gap-4">
+              {/* Left Column: Filter & Menu Grid */}
+              <div className="flex-1 flex flex-col min-w-0 space-y-3 overflow-hidden">
+                {/* Filter & Search Header */}
+                <div className="space-y-2">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                    <Input 
+                      value={catalogSearch}
+                      onChange={(e) => setCatalogSearch(e.target.value)}
+                      placeholder="Cari makanan / minuman..."
+                      className="pl-9 h-9 rounded-xl border-gray-200 text-xs font-bold"
+                    />
                   </div>
-                ) : filteredCatalogItems.length > 0 ? (
-                  <div className="grid grid-cols-2 gap-2">
-                    {filteredCatalogItems.map(item => {
-                      const cartEntry = cart.find(c => c.id === item.id);
-                      return (
-                        <div 
-                          key={item.id}
-                          onClick={() => addToCart(item)}
-                          className={cn(
-                            "relative p-3 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between h-28 active:scale-95",
-                            cartEntry ? "border-primary bg-primary/5 shadow-sm" : "border-gray-100 bg-gray-50/50 hover:bg-gray-50",
-                            item.stock <= 0 && "opacity-50 pointer-events-none"
-                          )}
-                        >
-                          <div>
-                            <span className="text-[9px] font-black uppercase tracking-widest text-gray-400">
-                              Stok: {item.stock}
-                            </span>
-                            <h4 className="font-black text-xs text-gray-900 truncate leading-tight mt-0.5">{item.name}</h4>
-                          </div>
+                  <div className="flex gap-1.5 overflow-x-auto pb-1">
+                    {['ALL', 'Makanan', 'Minuman', 'Snack', 'Paket', 'Lainnya'].map(cat => (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => setActiveCategory(cat)}
+                        className={cn(
+                          "px-3 py-1 rounded-lg text-[11px] font-black whitespace-nowrap transition-all",
+                          activeCategory === cat ? "bg-primary text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                        )}
+                      >
+                        {cat === 'ALL' ? 'Semua' : cat}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-                          <div className="flex items-center justify-between mt-2">
-                            <span className="font-black text-xs text-primary">Rp {item.price.toLocaleString('id-ID')}</span>
-                            {cartEntry ? (
-                              <div className="flex items-center gap-1 bg-primary text-white px-2 py-0.5 rounded-full text-[10px] font-black">
-                                {cartEntry.qty}x
-                              </div>
-                            ) : (
-                              <div className="h-6 w-6 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-600">
-                                <Plus className="h-3 w-3" />
-                              </div>
+                {/* Grid Catalog Items */}
+                <div className="flex-1 overflow-y-auto pr-1 space-y-2">
+                  {loadingItems ? (
+                    <div className="flex h-40 items-center justify-center">
+                      <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                    </div>
+                  ) : filteredCatalogItems.length > 0 ? (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                      {filteredCatalogItems.map(item => {
+                        const cartEntry = cart.find(c => c.id === item.id);
+                        return (
+                          <div 
+                            key={item.id}
+                            onClick={() => addToCart(item)}
+                            className={cn(
+                              "relative p-3 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between h-28 active:scale-95 hover:border-primary/50",
+                              cartEntry ? "border-primary bg-primary/5 shadow-sm" : "border-gray-100 bg-gray-50/50 hover:bg-gray-50",
+                              item.stock <= 0 && "opacity-50 pointer-events-none"
                             )}
+                          >
+                            <div>
+                              <span className="text-[9px] font-black uppercase tracking-widest text-gray-400">
+                                Stok: {item.stock}
+                              </span>
+                              <h4 className="font-black text-xs text-gray-900 truncate leading-tight mt-0.5">{item.name}</h4>
+                            </div>
+
+                            <div className="flex items-center justify-between mt-2">
+                              <span className="font-black text-xs text-primary">Rp {item.price.toLocaleString('id-ID')}</span>
+                              {cartEntry ? (
+                                <div className="flex items-center gap-1 bg-primary text-white px-2 py-0.5 rounded-full text-[10px] font-black shadow-sm">
+                                  {cartEntry.qty}x
+                                </div>
+                              ) : (
+                                <div className="h-6 w-6 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-600 hover:border-primary hover:text-primary">
+                                  <Plus className="h-3 w-3" />
+                                </div>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="py-12 text-center text-gray-400">
-                    <UtensilsCrossed className="h-10 w-10 mx-auto mb-2 opacity-30" />
-                    <p className="text-xs font-bold">Belum ada menu di kategori ini</p>
-                  </div>
-                )}
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="py-12 text-center text-gray-400">
+                      <UtensilsCrossed className="h-10 w-10 mx-auto mb-2 opacity-30" />
+                      <p className="text-xs font-bold">Belum ada menu di kategori ini</p>
+                    </div>
+                  )}
+                </div>
               </div>
 
-              {/* Cart Summary Bar & Checkout Button */}
-              {cart.length > 0 && (
-                <div className="bg-gray-900 text-white rounded-2xl p-3.5 space-y-3 animate-in slide-in-from-bottom-2">
-                  <div className="max-h-24 overflow-y-auto space-y-1.5 divide-y divide-white/10 pr-1">
-                    {cart.map(c => (
-                      <div key={c.id} className="pt-1 flex items-center justify-between text-xs font-bold">
-                        <span className="truncate max-w-[150px]">{c.name}</span>
-                        <div className="flex items-center gap-2">
+              {/* Right Column: Cart Summary Bar & Checkout Panel */}
+              <div className="lg:w-80 w-full shrink-0 flex flex-col justify-between bg-gray-900 text-white rounded-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between border-b border-white/10 pb-2">
+                  <div className="flex items-center gap-2">
+                    <ShoppingCart className="h-4 w-4 text-emerald-400" />
+                    <h3 className="font-black text-xs uppercase tracking-wider text-white">Keranjang POS</h3>
+                  </div>
+                  {cart.length > 0 && (
+                    <button onClick={() => setCart([])} className="text-[10px] font-bold text-rose-400 hover:underline">
+                      Bersihkan
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex-1 max-h-48 lg:max-h-80 overflow-y-auto space-y-2 divide-y divide-white/10 pr-1">
+                  {cart.length > 0 ? (
+                    cart.map(c => (
+                      <div key={c.id} className="pt-2 flex items-center justify-between text-xs font-bold">
+                        <div className="min-w-0 pr-2">
+                          <p className="truncate text-white">{c.name}</p>
+                          <p className="text-[10px] text-white/50 font-normal">Rp {c.price.toLocaleString('id-ID')}</p>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
                           <button onClick={() => updateCartQty(c.id, -1)} className="p-1 rounded bg-white/10 hover:bg-white/20">
                             <Minus className="h-3 w-3" />
                           </button>
-                          <span>{c.qty}</span>
+                          <span className="w-4 text-center">{c.qty}</span>
                           <button onClick={() => updateCartQty(c.id, 1)} className="p-1 rounded bg-white/10 hover:bg-white/20">
                             <Plus className="h-3 w-3" />
                           </button>
-                          <span className="font-black text-emerald-400 min-w-[60px] text-right">
-                            Rp {(c.price * c.qty).toLocaleString('id-ID')}
+                          <span className="font-black text-emerald-400 min-w-[55px] text-right">
+                            {(c.price * c.qty).toLocaleString('id-ID')}
                           </span>
                         </div>
                       </div>
-                    ))}
+                    ))
+                  ) : (
+                    <div className="py-8 text-center text-white/40">
+                      <ShoppingCart className="h-8 w-8 mx-auto mb-1 opacity-30" />
+                      <p className="text-xs font-bold">Keranjang Kosong</p>
+                      <p className="text-[10px]">Klik menu di sebelah kiri untuk memilih pesanan</p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="pt-3 border-t border-white/20 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-[9px] text-white/50 font-black uppercase tracking-wider">Total Pembayaran</p>
+                      <p className="text-2xl font-black text-emerald-400">Rp {cartTotal.toLocaleString('id-ID')}</p>
+                    </div>
+                    <span className="text-xs font-bold text-white/60">{cart.reduce((a, c) => a + c.qty, 0)} Items</span>
                   </div>
 
-                  <div className="flex items-center justify-between pt-2 border-t border-white/20">
-                    <div>
-                      <p className="text-[9px] text-white/50 font-black uppercase">Total Belanja</p>
-                      <p className="text-xl font-black text-emerald-400">Rp {cartTotal.toLocaleString('id-ID')}</p>
-                    </div>
-                    <Button 
-                      onClick={() => setState('SCANNING')}
-                      className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black h-11 px-5 rounded-xl shadow-lg gap-2 text-xs uppercase tracking-wider"
-                    >
-                      <ScanLine className="h-4 w-4" /> Scan & Bayar
-                    </Button>
-                  </div>
+                  <Button 
+                    disabled={cart.length === 0}
+                    onClick={() => setState('SCANNING')}
+                    className="w-full bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black h-12 rounded-xl shadow-lg flex items-center justify-center gap-2 text-xs uppercase tracking-wider"
+                  >
+                    <ScanLine className="h-4 w-4" /> Scan & Bayar
+                  </Button>
                 </div>
-              )}
+              </div>
             </div>
           )}
 
