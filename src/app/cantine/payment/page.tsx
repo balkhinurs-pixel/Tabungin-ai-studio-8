@@ -10,20 +10,48 @@ import {
   ArrowRight,
   XCircle,
   Banknote,
-  Clock
+  Clock,
+  ShoppingCart,
+  Plus,
+  Minus,
+  Trash2,
+  UtensilsCrossed,
+  Calculator,
+  Search,
+  Loader2
 } from 'lucide-react';
 import jsQR from 'jsqr';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { getStudentDataForPayment, processCantinePayment } from '../actions';
+import { Input } from '@/components/ui/input';
+import { getStudentDataForPayment, processCantinePayment, getCanteenItemsAction } from '../actions';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 
-type PaymentState = 'AMOUNT_INPUT' | 'SCANNING' | 'PIN_INPUT' | 'PROCESSING' | 'SUCCESS' | 'ERROR';
+type PaymentState = 'POS_CATALOG' | 'AMOUNT_INPUT' | 'SCANNING' | 'PIN_INPUT' | 'PROCESSING' | 'SUCCESS' | 'ERROR';
+
+interface CartItem {
+  id: string;
+  name: string;
+  price: number;
+  qty: number;
+  maxStock: number;
+  category: string;
+}
 
 export default function CantinePOSPage() {
-  const [state, setState] = useState<PaymentState>('AMOUNT_INPUT');
+  const [state, setState] = useState<PaymentState>('POS_CATALOG');
+  const [posMode, setPosMode] = useState<'CATALOG' | 'MANUAL'>('CATALOG');
+  
+  // Catalog State
+  const [canteenItems, setCanteenItems] = useState<any[]>([]);
+  const [loadingItems, setLoadingItems] = useState(true);
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [catalogSearch, setCatalogSearch] = useState('');
+  const [activeCategory, setActiveCategory] = useState('ALL');
+
+  // Payment State
   const [student, setStudent] = useState<any>(null);
   const [amount, setAmount] = useState('');
   const [pin, setPin] = useState('');
@@ -35,13 +63,69 @@ export default function CantinePOSPage() {
   const { toast } = useToast();
   const router = useRouter();
 
+  // Load Menu Items on Mount
+  useEffect(() => {
+    async function fetchMenu() {
+      setLoadingItems(true);
+      const data = await getCanteenItemsAction();
+      setCanteenItems(data || []);
+      setLoadingItems(false);
+    }
+    fetchMenu();
+  }, []);
+
   const handleReset = () => {
-    setState('AMOUNT_INPUT');
+    setState('POS_CATALOG');
     setStudent(null);
     setAmount('');
     setPin('');
+    setCart([]);
     setIsProcessingQR(false);
     setErrorMessage('');
+  };
+
+  // Total amount calculated from cart or manual input
+  const cartTotal = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
+  const finalAmount = posMode === 'CATALOG' ? cartTotal : parseInt(amount || '0');
+
+  // Cart operations
+  const addToCart = (item: any) => {
+    if (item.stock <= 0) {
+      toast({ title: 'Stok Habis!', variant: 'destructive' });
+      return;
+    }
+    setCart(prev => {
+      const existing = prev.find(i => i.id === item.id);
+      if (existing) {
+        if (existing.qty >= item.stock) {
+          toast({ title: `Maksimal stok tercapai (${item.stock})`, variant: 'destructive' });
+          return prev;
+        }
+        return prev.map(i => i.id === item.id ? { ...i, qty: i.qty + 1 } : i);
+      }
+      return [...prev, {
+        id: item.id,
+        name: item.name,
+        price: item.price,
+        qty: 1,
+        maxStock: item.stock,
+        category: item.category || 'Makanan'
+      }];
+    });
+  };
+
+  const updateCartQty = (id: string, delta: number) => {
+    setCart(prev => prev.map(i => {
+      if (i.id === id) {
+        const newQty = i.qty + delta;
+        if (newQty > i.maxStock) {
+          toast({ title: `Stok maksimal: ${i.maxStock}`, variant: 'destructive' });
+          return i;
+        }
+        return newQty > 0 ? { ...i, qty: newQty } : null;
+      }
+      return i;
+    }).filter(Boolean) as CartItem[]);
   };
 
   useEffect(() => {
@@ -119,8 +203,9 @@ export default function CantinePOSPage() {
         studentId: student.id,
         nis: student.nis,
         schoolCode: student.schoolCode,
-        amount: parseInt(amount),
-        pin: pin
+        amount: finalAmount,
+        pin: pin,
+        items: posMode === 'CATALOG' ? cart.map(c => ({ id: c.id, name: c.name, qty: c.qty, price: c.price })) : undefined
     });
 
     if (result.success) {
@@ -131,6 +216,13 @@ export default function CantinePOSPage() {
         setState('ERROR');
     }
   };
+
+  // Filter Catalog Items
+  const filteredCatalogItems = canteenItems.filter(item => {
+    const matchSearch = item.name.toLowerCase().includes(catalogSearch.toLowerCase());
+    const matchCat = activeCategory === 'ALL' || item.category === activeCategory;
+    return matchSearch && matchCat;
+  });
 
   // Modern Compact Keypad for Mobile POS
   const Keypad = ({ value, onChange, onConfirm, label, subLabel, max = 9 }: any) => (
@@ -196,37 +288,178 @@ export default function CantinePOSPage() {
   );
 
   return (
-    <div className="fixed inset-0 bg-white flex flex-col p-4 overflow-hidden z-[60]">
+    <div className="fixed inset-0 bg-gray-50 flex flex-col p-4 overflow-hidden z-[60]">
       {/* Header POS */}
-      <div className="flex items-center justify-between mb-2">
-          <Button variant="ghost" size="icon" className="rounded-full bg-gray-50 h-10 w-10" onClick={() => router.back()}>
-              <ArrowLeft className="h-5 w-5" />
+      <div className="flex items-center justify-between mb-3 bg-white p-3 rounded-2xl border border-gray-200 shadow-sm">
+          <Button variant="ghost" size="icon" className="rounded-full bg-gray-100 h-9 w-9" onClick={() => router.back()}>
+              <ArrowLeft className="h-4 w-4" />
           </Button>
-          <div className="flex flex-col items-center">
-              <span className="text-[9px] font-black uppercase tracking-[0.3em] text-gray-400">Terminal Kasir</span>
-              <span className="text-xs font-black text-gray-900 tracking-tight">
-                  {state === 'AMOUNT_INPUT' && 'Nominal Belanja'}
-                  {state === 'SCANNING' && 'Pindai Kartu'}
-                  {state === 'PIN_INPUT' && 'Verifikasi Keamanan'}
-                  {state === 'PROCESSING' && 'Sedang Memproses'}
-                  {state === 'SUCCESS' && 'Pembayaran Berhasil'}
-              </span>
-          </div>
-          <div className="w-10 h-10 rounded-full bg-orange-50 flex items-center justify-center text-orange-500">
-              <Banknote className="h-5 w-5" />
+
+          {/* Mode Switcher: KATALOG POS vs NOMINAL MANUAL */}
+          {state === 'POS_CATALOG' && (
+            <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-xl">
+              <button
+                type="button"
+                onClick={() => setPosMode('CATALOG')}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black transition-all",
+                  posMode === 'CATALOG' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-900"
+                )}
+              >
+                <UtensilsCrossed className="h-3.5 w-3.5" /> Menu POS
+              </button>
+              <button
+                type="button"
+                onClick={() => setPosMode('MANUAL')}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black transition-all",
+                  posMode === 'MANUAL' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-900"
+                )}
+              >
+                <Calculator className="h-3.5 w-3.5" /> Ketik Nominal
+              </button>
+            </div>
+          )}
+
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center text-orange-600 font-bold">
+                <Banknote className="h-4 w-4" />
+            </div>
           </div>
       </div>
 
       <div className="flex-1 flex flex-col items-center justify-center overflow-hidden">
-          {/* STEP 1: INPUT NOMINAL */}
-          {state === 'AMOUNT_INPUT' && (
-              <Keypad label="Masukan Jumlah" value={amount} onChange={setAmount} onConfirm={() => setState('SCANNING')} />
+          {/* STEP 1: MODE POS KATALOG BARANG */}
+          {state === 'POS_CATALOG' && posMode === 'CATALOG' && (
+            <div className="w-full flex-1 flex flex-col overflow-hidden max-w-lg mx-auto bg-white rounded-3xl border border-gray-200 shadow-sm p-4 space-y-3">
+              {/* Filter & Search Header */}
+              <div className="space-y-2">
+                <div className="relative">
+                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                  <Input 
+                    value={catalogSearch}
+                    onChange={(e) => setCatalogSearch(e.target.value)}
+                    placeholder="Cari makanan / minuman..."
+                    className="pl-9 h-9 rounded-xl border-gray-200 text-xs font-bold"
+                  />
+                </div>
+                <div className="flex gap-1.5 overflow-x-auto pb-1">
+                  {['ALL', 'Makanan', 'Minuman', 'Snack'].map(cat => (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setActiveCategory(cat)}
+                      className={cn(
+                        "px-3 py-1 rounded-lg text-[11px] font-black whitespace-nowrap transition-all",
+                        activeCategory === cat ? "bg-primary text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      )}
+                    >
+                      {cat === 'ALL' ? 'Semua' : cat}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Grid Catalog Items */}
+              <div className="flex-1 overflow-y-auto pr-1 space-y-2">
+                {loadingItems ? (
+                  <div className="flex h-40 items-center justify-center">
+                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                  </div>
+                ) : filteredCatalogItems.length > 0 ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    {filteredCatalogItems.map(item => {
+                      const cartEntry = cart.find(c => c.id === item.id);
+                      return (
+                        <div 
+                          key={item.id}
+                          onClick={() => addToCart(item)}
+                          className={cn(
+                            "relative p-3 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between h-28 active:scale-95",
+                            cartEntry ? "border-primary bg-primary/5 shadow-sm" : "border-gray-100 bg-gray-50/50 hover:bg-gray-50",
+                            item.stock <= 0 && "opacity-50 pointer-events-none"
+                          )}
+                        >
+                          <div>
+                            <span className="text-[9px] font-black uppercase tracking-widest text-gray-400">
+                              Stok: {item.stock}
+                            </span>
+                            <h4 className="font-black text-xs text-gray-900 truncate leading-tight mt-0.5">{item.name}</h4>
+                          </div>
+
+                          <div className="flex items-center justify-between mt-2">
+                            <span className="font-black text-xs text-primary">Rp {item.price.toLocaleString('id-ID')}</span>
+                            {cartEntry ? (
+                              <div className="flex items-center gap-1 bg-primary text-white px-2 py-0.5 rounded-full text-[10px] font-black">
+                                {cartEntry.qty}x
+                              </div>
+                            ) : (
+                              <div className="h-6 w-6 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-600">
+                                <Plus className="h-3 w-3" />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="py-12 text-center text-gray-400">
+                    <UtensilsCrossed className="h-10 w-10 mx-auto mb-2 opacity-30" />
+                    <p className="text-xs font-bold">Belum ada menu di kategori ini</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Cart Summary Bar & Checkout Button */}
+              {cart.length > 0 && (
+                <div className="bg-gray-900 text-white rounded-2xl p-3.5 space-y-3 animate-in slide-in-from-bottom-2">
+                  <div className="max-h-24 overflow-y-auto space-y-1.5 divide-y divide-white/10 pr-1">
+                    {cart.map(c => (
+                      <div key={c.id} className="pt-1 flex items-center justify-between text-xs font-bold">
+                        <span className="truncate max-w-[150px]">{c.name}</span>
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => updateCartQty(c.id, -1)} className="p-1 rounded bg-white/10 hover:bg-white/20">
+                            <Minus className="h-3 w-3" />
+                          </button>
+                          <span>{c.qty}</span>
+                          <button onClick={() => updateCartQty(c.id, 1)} className="p-1 rounded bg-white/10 hover:bg-white/20">
+                            <Plus className="h-3 w-3" />
+                          </button>
+                          <span className="font-black text-emerald-400 min-w-[60px] text-right">
+                            Rp {(c.price * c.qty).toLocaleString('id-ID')}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2 border-t border-white/20">
+                    <div>
+                      <p className="text-[9px] text-white/50 font-black uppercase">Total Belanja</p>
+                      <p className="text-xl font-black text-emerald-400">Rp {cartTotal.toLocaleString('id-ID')}</p>
+                    </div>
+                    <Button 
+                      onClick={() => setState('SCANNING')}
+                      className="bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black h-11 px-5 rounded-xl shadow-lg gap-2 text-xs uppercase tracking-wider"
+                    >
+                      <ScanLine className="h-4 w-4" /> Scan & Bayar
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* STEP 1 (MANUAL): INPUT NOMINAL MANUAL */}
+          {state === 'POS_CATALOG' && posMode === 'MANUAL' && (
+              <Keypad label="Masukan Nominal Belanja" value={amount} onChange={setAmount} onConfirm={() => setState('SCANNING')} />
           )}
 
           {/* STEP 2: SCANNING */}
           {state === 'SCANNING' && (
               <div className="flex flex-col items-center w-full max-w-sm space-y-6 flex-1 justify-center">
-                  <div className="relative w-64 h-64 border-4 border-dashed border-gray-100 rounded-[2.5rem] overflow-hidden flex items-center justify-center bg-gray-50">
+                  <div className="relative w-64 h-64 border-4 border-dashed border-gray-200 rounded-[2.5rem] overflow-hidden flex items-center justify-center bg-gray-100">
                       <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" />
                       <canvas ref={canvasRef} className="hidden" />
                       <div className="absolute inset-0 border-[20px] border-white/40 pointer-events-none" />
@@ -234,7 +467,7 @@ export default function CantinePOSPage() {
                       
                       <div className="absolute top-3 left-3 bg-primary text-white px-3 py-1 rounded-lg shadow-lg flex items-center gap-2">
                           <Banknote className="h-3.5 w-3.5" />
-                          <span className="font-black text-xs">Rp {parseInt(amount).toLocaleString('id-ID')}</span>
+                          <span className="font-black text-xs">Rp {finalAmount.toLocaleString('id-ID')}</span>
                       </div>
                   </div>
                   
@@ -262,12 +495,12 @@ export default function CantinePOSPage() {
           {state === 'PROCESSING' && (
               <div className="flex flex-col items-center gap-4">
                   <div className="relative">
-                      <div className="h-16 w-16 border-4 border-gray-100 rounded-full" />
+                      <div className="h-16 w-16 border-4 border-gray-200 rounded-full" />
                       <div className="h-16 w-16 border-4 border-primary border-t-transparent rounded-full animate-spin absolute inset-0" />
                   </div>
                   <div className="text-center">
                       <h2 className="text-lg font-black text-gray-900 tracking-widest uppercase">MEMPROSES...</h2>
-                      <p className="text-[8px] font-bold text-gray-400 uppercase tracking-widest animate-pulse mt-1">Verifikasi Saldo Aman</p>
+                      <p className="text-[8px] font-bold text-gray-400 uppercase tracking-widest animate-pulse mt-1">Verifikasi Saldo & Potong Stok</p>
                   </div>
               </div>
           )}
@@ -281,19 +514,32 @@ export default function CantinePOSPage() {
                   
                   <div className="space-y-0.5">
                       <h2 className="text-xl font-black text-gray-900 tracking-tight">PEMBAYARAN BERHASIL</h2>
-                      <p className="text-gray-400 font-bold text-[9px] uppercase tracking-widest">Transaksi Telah Tercatat</p>
+                      <p className="text-gray-400 font-bold text-[9px] uppercase tracking-widest">Transaksi & Stok Telah Terpotong</p>
                   </div>
 
-                  <Card className="bg-gray-50 border-2 border-white rounded-3xl shadow-sm">
+                  <Card className="bg-white border border-gray-200 rounded-3xl shadow-sm">
                       <CardContent className="p-4 space-y-3">
-                          <div className="flex justify-between items-center border-b border-gray-200 pb-2">
+                          <div className="flex justify-between items-center border-b border-gray-100 pb-2">
                               <span className="text-[8px] font-black uppercase text-gray-400 tracking-widest">Total Belanja</span>
-                              <span className="text-lg font-black text-gray-900">Rp {parseInt(amount).toLocaleString('id-ID')}</span>
+                              <span className="text-lg font-black text-emerald-600">Rp {finalAmount.toLocaleString('id-ID')}</span>
                           </div>
-                          <div className="flex flex-col items-start border-b border-gray-200 pb-2">
+                          <div className="flex flex-col items-start border-b border-gray-100 pb-2">
                               <span className="text-[8px] font-black uppercase text-gray-400 tracking-widest mb-0.5">Nama Siswa</span>
                               <span className="font-bold text-gray-900 uppercase text-sm truncate w-full text-left">{student?.name}</span>
                           </div>
+                          
+                          {cart.length > 0 && (
+                            <div className="border-b border-gray-100 pb-2 text-left space-y-1">
+                              <span className="text-[8px] font-black uppercase text-gray-400 tracking-widest">Rincian Belanja</span>
+                              {cart.map(c => (
+                                <div key={c.id} className="flex justify-between text-xs font-bold text-gray-700">
+                                  <span>{c.name} x{c.qty}</span>
+                                  <span>Rp {(c.price * c.qty).toLocaleString('id-ID')}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
                           <div className="flex justify-between items-center">
                               <span className="text-[8px] font-black uppercase text-gray-400 tracking-widest">Waktu</span>
                               <div className="flex items-center gap-1.5 text-gray-600 font-bold text-[10px]">
@@ -338,3 +584,4 @@ export default function CantinePOSPage() {
     </div>
   );
 }
+

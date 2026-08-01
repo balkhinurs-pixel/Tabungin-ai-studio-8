@@ -4,7 +4,8 @@ import {
   History, 
   LayoutGrid, 
   LogOut,
-  ScanLine 
+  ScanLine,
+  UtensilsCrossed
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -43,34 +44,45 @@ export default function CantineLayout({ children }: { children: React.ReactNode 
         </main>
 
         {/* Mobile Bottom POS Nav - Reordered for professional look */}
-        <nav className="fixed bottom-0 inset-x-0 h-20 bg-white border-t flex items-center justify-between px-10 z-50 sm:hidden shadow-[0_-10px_30px_rgba(0,0,0,0.05)]">
+        <nav className="fixed bottom-0 inset-x-0 h-20 bg-white border-t flex items-center justify-around px-4 z-50 sm:hidden shadow-[0_-10px_30px_rgba(0,0,0,0.05)]">
             <Link 
                 href="/cantine/outlet"
                 className={cn(
                     "flex flex-col items-center gap-1 transition-all duration-300",
-                    pathname === '/cantine/outlet' ? "text-primary" : "text-gray-400"
+                    pathname === '/cantine/outlet' ? "text-primary font-bold" : "text-gray-400"
                 )}
             >
-                <LayoutGrid className="h-6 w-6" />
-                <span className="text-[10px] font-black uppercase tracking-widest">Outlet</span>
+                <LayoutGrid className="h-5 w-5" />
+                <span className="text-[10px] uppercase tracking-widest">Outlet</span>
+            </Link>
+
+            <Link 
+                href="/cantine/menu"
+                className={cn(
+                    "flex flex-col items-center gap-1 transition-all duration-300",
+                    pathname === '/cantine/menu' ? "text-primary font-bold" : "text-gray-400"
+                )}
+            >
+                <UtensilsCrossed className="h-5 w-5" />
+                <span className="text-[10px] uppercase tracking-widest">Katalog</span>
             </Link>
 
             <Link 
                 href="/cantine/payment"
-                className="relative -top-6 h-16 w-16 bg-primary rounded-full shadow-2xl flex items-center justify-center text-white border-4 border-white transition-transform active:scale-90"
+                className="relative -top-5 h-14 w-14 bg-primary rounded-full shadow-2xl flex items-center justify-center text-white border-4 border-white transition-transform active:scale-90"
             >
-                <ScanLine className="h-8 w-8" />
+                <ScanLine className="h-7 w-7" />
             </Link>
 
             <Link 
                 href="/cantine/history"
                 className={cn(
                     "flex flex-col items-center gap-1 transition-all duration-300",
-                    pathname === '/cantine/history' ? "text-primary" : "text-gray-400"
+                    pathname === '/cantine/history' ? "text-primary font-bold" : "text-gray-400"
                 )}
             >
-                <History className="h-6 w-6" />
-                <span className="text-[10px] font-black uppercase tracking-widest">Riwayat</span>
+                <History className="h-5 w-5" />
+                <span className="text-[10px] uppercase tracking-widest">Riwayat</span>
             </Link>
         </nav>
     </div>

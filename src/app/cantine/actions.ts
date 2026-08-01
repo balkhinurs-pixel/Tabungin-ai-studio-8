@@ -97,8 +97,135 @@ export async function getStudentDataForPayment(nis: string, schoolCode: string) 
     }
 }
 
+// --- MANAGEMENT STOK & KATALOG MENU KANTIN ---
+
 /**
- * Memproses pembayaran dari tabungan siswa ke outlet kantin.
+ * Mengambil daftar menu/produk kantin milik outlet yang sedang login.
+ */
+export async function getCanteenItemsAction() {
+    const supabaseUser = createClient();
+    const { data: { user } } = await supabaseUser.auth.getUser();
+    if (!user) return [];
+
+    const supabaseAdmin = getSupabaseAdmin();
+    try {
+        const { data, error } = await supabaseAdmin
+            .from('canteen_items')
+            .select('*')
+            .eq('user_id', user.id)
+            .order('name', { ascending: true });
+
+        if (error) {
+            console.error('[GET_CANTEEN_ITEMS_ERR]', error);
+            return [];
+        }
+        return data || [];
+    } catch (err) {
+        console.error('[GET_CANTEEN_ITEMS_CATCH]', err);
+        return [];
+    }
+}
+
+/**
+ * Menambah produk menu baru di kantin.
+ */
+export async function addCanteenItemAction(params: {
+    name: string;
+    category: string;
+    price: number;
+    stock: number;
+    image_url?: string;
+}) {
+    const supabaseUser = createClient();
+    const { data: { user } } = await supabaseUser.auth.getUser();
+    if (!user) return { success: false, message: 'Sesi berakhir.' };
+
+    const supabaseAdmin = getSupabaseAdmin();
+    try {
+        const { error } = await supabaseAdmin
+            .from('canteen_items')
+            .insert({
+                user_id: user.id,
+                name: params.name.trim(),
+                category: params.category || 'Makanan',
+                price: params.price,
+                stock: params.stock,
+                image_url: params.image_url || null,
+                is_available: params.stock > 0
+            });
+
+        if (error) throw error;
+        revalidatePath('/cantine/menu');
+        revalidatePath('/cantine/payment');
+        return { success: true, message: 'Menu berhasil ditambahkan!' };
+    } catch (err: any) {
+        return { success: false, message: 'Gagal menambah menu: ' + (err.message || 'Error internal') };
+    }
+}
+
+/**
+ * Mengubah data / stok menu kantin.
+ */
+export async function updateCanteenItemAction(id: string, params: {
+    name?: string;
+    category?: string;
+    price?: number;
+    stock?: number;
+    is_available?: boolean;
+}) {
+    const supabaseUser = createClient();
+    const { data: { user } } = await supabaseUser.auth.getUser();
+    if (!user) return { success: false, message: 'Sesi berakhir.' };
+
+    const supabaseAdmin = getSupabaseAdmin();
+    try {
+        const payload: any = { ...params, updated_at: new Date().toISOString() };
+        if (typeof params.stock === 'number') {
+            payload.is_available = params.stock > 0;
+        }
+
+        const { error } = await supabaseAdmin
+            .from('canteen_items')
+            .update(payload)
+            .eq('id', id)
+            .eq('user_id', user.id);
+
+        if (error) throw error;
+        revalidatePath('/cantine/menu');
+        revalidatePath('/cantine/payment');
+        return { success: true, message: 'Menu berhasil diperbarui!' };
+    } catch (err: any) {
+        return { success: false, message: 'Gagal mengubah menu: ' + (err.message || 'Error internal') };
+    }
+}
+
+/**
+ * Menghapus menu kantin.
+ */
+export async function deleteCanteenItemAction(id: string) {
+    const supabaseUser = createClient();
+    const { data: { user } } = await supabaseUser.auth.getUser();
+    if (!user) return { success: false, message: 'Sesi berakhir.' };
+
+    const supabaseAdmin = getSupabaseAdmin();
+    try {
+        const { error } = await supabaseAdmin
+            .from('canteen_items')
+            .delete()
+            .eq('id', id)
+            .eq('user_id', user.id);
+
+        if (error) throw error;
+        revalidatePath('/cantine/menu');
+        revalidatePath('/cantine/payment');
+        return { success: true, message: 'Menu berhasil dihapus!' };
+    } catch (err: any) {
+        return { success: false, message: 'Gagal menghapus menu: ' + (err.message || 'Error internal') };
+    }
+}
+
+/**
+ * Memproses pembayaran dari tabungan siswa ke outlet kantin (dengan opsional rincian item).
  */
 export async function processCantinePayment(params: {
     studentId: string;
@@ -106,8 +233,9 @@ export async function processCantinePayment(params: {
     schoolCode: string;
     amount: number;
     pin: string;
+    items?: Array<{ id: string; name: string; qty: number; price: number }>;
 }) {
-    const { studentId, nis, schoolCode, amount, pin } = params;
+    const { studentId, nis, schoolCode, amount, pin, items } = params;
     const supabaseAdmin = getSupabaseAdmin();
     const supabaseUser = createClient();
     
@@ -138,6 +266,24 @@ export async function processCantinePayment(params: {
         // 2. Identitas Merchant & Cek Limit (Ambil data paling segar)
         const { data: { user: activeMerchant } } = await supabaseUser.auth.getUser();
         if (!activeMerchant) return { success: false, message: 'Sesi outlet berakhir.' };
+
+        // Cek stok item jika ada items yang dibeli
+        if (items && items.length > 0) {
+            for (const item of items) {
+                const { data: dbItem } = await supabaseAdmin
+                    .from('canteen_items')
+                    .select('stock, name')
+                    .eq('id', item.id)
+                    .single();
+
+                if (dbItem && dbItem.stock < item.qty) {
+                    return { 
+                        success: false, 
+                        message: `Stok produk "${dbItem.name}" tidak mencukupi (Tersisa: ${dbItem.stock}).` 
+                    };
+                }
+            }
+        }
 
         const { data: student, error: studentError } = await supabaseAdmin
             .from('students')
@@ -182,6 +328,13 @@ export async function processCantinePayment(params: {
 
         const merchantDisplayName = merchantProfile?.school_name || activeMerchant.email?.split('@')[0].toUpperCase() || 'KANTIN';
 
+        // Susun rincian item deskripsi
+        let desc = `Belanja: ${merchantDisplayName}`;
+        if (items && items.length > 0) {
+            const itemSummary = items.map(i => `${i.name} (${i.qty}x)`).join(', ');
+            desc = `Belanja: ${itemSummary}`;
+        }
+
         // 3. Insert Transaksi
         const { error: txError } = await supabaseAdmin.from('transactions').insert({
             student_id: studentId,
@@ -189,16 +342,40 @@ export async function processCantinePayment(params: {
             amount: amount,
             type: 'Pengeluaran',
             category: 'BELANJA_KANTIN',
-            description: `Belanja: ${merchantDisplayName}`,
+            description: desc,
             is_settled: false
         });
 
         if (txError) throw txError;
 
+        // 4. Potong Stok Item di DB jika ada
+        if (items && items.length > 0) {
+            for (const item of items) {
+                const { data: currentItem } = await supabaseAdmin
+                    .from('canteen_items')
+                    .select('stock')
+                    .eq('id', item.id)
+                    .single();
+
+                if (currentItem) {
+                    const newStock = Math.max(0, currentItem.stock - item.qty);
+                    await supabaseAdmin
+                        .from('canteen_items')
+                        .update({ 
+                            stock: newStock, 
+                            is_available: newStock > 0,
+                            updated_at: new Date().toISOString() 
+                        })
+                        .eq('id', item.id);
+                }
+            }
+        }
+
         revalidatePath('/', 'layout'); 
         revalidatePath('/dashboard');
         revalidatePath('/home');
         revalidatePath(`/profiles/${studentId}`);
+        revalidatePath('/cantine/menu');
 
         return { success: true, message: 'Pembayaran Berhasil.' };
     } catch (err: any) {
