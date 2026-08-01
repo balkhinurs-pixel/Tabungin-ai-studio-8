@@ -23,7 +23,8 @@ import {
   Keyboard,
   Volume2,
   Coins,
-  Calculator
+  Calculator,
+  Building2
 } from 'lucide-react';
 import jsQR from 'jsqr';
 import { useToast } from '@/hooks/use-toast';
@@ -77,13 +78,39 @@ export default function KioskPage() {
   const deviceInputRef = useRef<HTMLInputElement>(null);
   const [deviceInputVal, setDeviceInputVal] = useState('');
 
-  // Load persistent scan mode from localStorage
+  // Persistent Kiosk School Code filter
+  const [savedSchoolCode, setSavedSchoolCode] = useState('');
+  const [isSchoolCodeModalOpen, setIsSchoolCodeModalOpen] = useState(false);
+  const [tempSchoolCodeInput, setTempSchoolCodeInput] = useState('');
+
+  // Load persistent scan mode & school code from localStorage
   useEffect(() => {
-    const saved = localStorage.getItem('kiosk_scan_mode');
-    if (saved === 'CAMERA' || saved === 'DEVICE') {
-      setActiveScanMode(saved);
+    const savedMode = localStorage.getItem('kiosk_scan_mode');
+    if (savedMode === 'CAMERA' || savedMode === 'DEVICE') {
+      setActiveScanMode(savedMode);
+    }
+    const savedCode = localStorage.getItem('kiosk_school_code');
+    if (savedCode) {
+      setSavedSchoolCode(savedCode.trim().toLowerCase());
     }
   }, []);
+
+  const handleSaveSchoolCode = (code: string) => {
+    const trimmed = code.trim().toLowerCase();
+    setSavedSchoolCode(trimmed);
+    if (trimmed) {
+      localStorage.setItem('kiosk_school_code', trimmed);
+    } else {
+      localStorage.removeItem('kiosk_school_code');
+    }
+    setIsSchoolCodeModalOpen(false);
+    toast({
+      title: trimmed ? "Filter Kode Sekolah Tersimpan" : "Filter Kode Sekolah Dihapus",
+      description: trimmed 
+        ? `Kios sekarang terikat khusus ke sekolah dengan kode: ${trimmed.toUpperCase()}` 
+        : "Pencarian siswa sekarang mencakup seluruh database.",
+    });
+  };
 
   const handleModeChange = (mode: 'DEVICE' | 'CAMERA') => {
     setActiveScanMode(mode);
@@ -325,6 +352,11 @@ export default function KioskPage() {
         schoolCode = parts[1]?.trim() || '';
     } else {
         nis = data;
+        schoolCode = savedSchoolCode;
+    }
+
+    if (!schoolCode && savedSchoolCode) {
+        schoolCode = savedSchoolCode;
     }
 
     if (!nis) {
@@ -479,6 +511,27 @@ export default function KioskPage() {
             </div>
             {kioskState === 'SCANNING' && (
                 <div className="flex items-center gap-1.5 sm:gap-2">
+                    <Button 
+                        variant="ghost" 
+                        className={cn(
+                            "font-black text-[10px] sm:text-[11px] rounded-full h-8 sm:h-10 px-2.5 sm:px-4 border shadow-sm flex items-center gap-1.5 transition-all",
+                            savedSchoolCode 
+                                ? "bg-blue-500/10 border-blue-500/30 text-blue-400 hover:bg-blue-500/20" 
+                                : "bg-amber-500/10 border-amber-500/30 text-amber-400 hover:bg-amber-500/20 animate-pulse"
+                        )} 
+                        onClick={() => {
+                            setTempSchoolCodeInput(savedSchoolCode);
+                            setIsSchoolCodeModalOpen(true);
+                        }}
+                    >
+                        <Building2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" /> 
+                        <span>
+                            {savedSchoolCode 
+                                ? <span><span className="hidden sm:inline">Sekolah: </span><span className="uppercase font-extrabold">{savedSchoolCode}</span></span>
+                                : <span><span className="hidden sm:inline">Filter </span>Kode Sekolah</span>
+                            }
+                        </span>
+                    </Button>
                     <Button 
                         variant="ghost" 
                         className="text-emerald-400 font-black text-[10px] sm:text-[11px] rounded-full h-8 sm:h-10 px-2.5 sm:px-4 bg-emerald-500/10 border border-emerald-500/30 hover:bg-emerald-500/20 shadow-sm flex items-center gap-1.5" 
@@ -654,8 +707,9 @@ export default function KioskPage() {
                                 onSubmit={(e) => {
                                     e.preventDefault();
                                     if (manualNis.trim()) {
-                                        const finalCode = manualSchoolCode.trim() 
-                                            ? `${manualNis.trim()},${manualSchoolCode.trim()}`
+                                        const effectiveSchoolCode = manualSchoolCode.trim() || savedSchoolCode.trim();
+                                        const finalCode = effectiveSchoolCode 
+                                            ? `${manualNis.trim()},${effectiveSchoolCode}`
                                             : manualNis.trim();
                                         handleScanResult(finalCode);
                                         setManualNis('');
@@ -670,8 +724,8 @@ export default function KioskPage() {
                                         type="text"
                                         value={manualSchoolCode}
                                         onChange={(e) => setManualSchoolCode(e.target.value)}
-                                        placeholder="Kode Sekolah (Opsional)"
-                                        className="w-full sm:w-1/3 h-11 bg-white/10 border border-white/20 rounded-xl px-3 text-white text-xs font-bold focus:outline-none focus:border-primary placeholder:text-white/40"
+                                        placeholder={savedSchoolCode ? `Sekolah: ${savedSchoolCode.toUpperCase()}` : "Kode Sekolah (Opsional)"}
+                                        className="w-full sm:w-1/3 h-11 bg-white/10 border border-white/20 rounded-xl px-3 text-white text-xs font-bold focus:outline-none focus:border-primary placeholder:text-white/40 uppercase"
                                     />
                                     <input
                                         type="text"
@@ -1048,6 +1102,73 @@ export default function KioskPage() {
           isOpen={isSettlementOpen} 
           onClose={() => setIsSettlementOpen(false)} 
         />
+
+        {/* Modal Filter Kode Sekolah Kiosk */}
+        {isSchoolCodeModalOpen && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="bg-slate-900 border border-slate-700 rounded-2xl sm:rounded-3xl w-full max-w-md text-white p-5 space-y-4 shadow-2xl">
+              <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="h-9 w-9 rounded-xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-blue-400 shrink-0">
+                    <Building2 className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-white">Filter Kode Sekolah Kios</h3>
+                    <p className="text-[10px] text-slate-400 font-medium">Isolasi data & cegah bentrok NIS siswa</p>
+                  </div>
+                </div>
+                <Button variant="ghost" size="icon" onClick={() => setIsSchoolCodeModalOpen(false)} className="rounded-full h-8 w-8 text-slate-400 hover:text-white">
+                  <XCircle className="h-5 w-5" />
+                </Button>
+              </div>
+
+              <div className="space-y-3">
+                <p className="text-xs text-slate-300 font-medium leading-relaxed">
+                  Atur Kode Sekolah di mana perangkat ATM Kios ini beroperasi. Setelah disimpan, semua pencarian & pemindaian NIS secara otomatis terfilter khusus untuk sekolah tersebut.
+                </p>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase text-slate-400">Kode Sekolah (Contoh: SCH001 / SMPN1)</label>
+                  <input 
+                    type="text" 
+                    value={tempSchoolCodeInput} 
+                    onChange={(e) => setTempSchoolCodeInput(e.target.value)} 
+                    placeholder="Masukkan kode sekolah..." 
+                    className="w-full h-11 bg-slate-950 border border-slate-700 rounded-xl px-3 text-white font-mono font-bold text-sm focus:outline-none focus:border-blue-500 uppercase"
+                    autoFocus
+                  />
+                </div>
+
+                <div className="bg-slate-950/60 border border-slate-800 p-3 rounded-xl text-[11px] text-slate-400 space-y-1">
+                  <p className="font-bold text-slate-200">✨ Manfaat Utama Penguncian Kode Sekolah:</p>
+                  <p>• Mencegah siswa dari sekolah lain tertukar jika NIS-nya sama.</p>
+                  <p>• Siswa & penjaga tidak perlu mengetik kode sekolah berulang kali.</p>
+                  <p>• Data transaksi & rekap laci kasir otomatis terisolasi aman.</p>
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                {savedSchoolCode && (
+                  <Button 
+                    type="button"
+                    variant="outline" 
+                    onClick={() => handleSaveSchoolCode('')} 
+                    className="border-slate-700 bg-slate-800 text-slate-300 text-xs font-bold h-10 rounded-xl hover:bg-slate-700"
+                  >
+                    Hapus Filter
+                  </Button>
+                )}
+                <Button 
+                  type="button"
+                  onClick={() => handleSaveSchoolCode(tempSchoolCodeInput)} 
+                  className="flex-1 bg-blue-600 hover:bg-blue-500 text-white text-xs font-black h-10 rounded-xl shadow-lg"
+                >
+                  Simpan & Lock Kode Sekolah
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
     </div>
   );
 }

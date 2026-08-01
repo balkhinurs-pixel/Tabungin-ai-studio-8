@@ -57,7 +57,7 @@ export async function getStudentKioskData(nis: string, schoolCode?: string) {
         balance: balance,
         dailyLimit: data.daily_limit,
         nis: nis.trim(),
-        schoolCode: schoolCode.trim().toLowerCase()
+        schoolCode: (data.profiles as any)?.school_code || schoolCode.trim().toLowerCase()
       }
     };
   } catch (err) {
