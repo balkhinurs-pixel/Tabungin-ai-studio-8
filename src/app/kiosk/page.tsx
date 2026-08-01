@@ -223,60 +223,98 @@ export default function KioskPage() {
   }, [kioskState]);
 
   useEffect(() => {
+    let isCancelled = false;
+
     const getCameraPermission = async () => {
       try {
         // Hentikan stream yang ada sebelum memulai yang baru
         if (streamRef.current) {
-            streamRef.current.getTracks().forEach(track => track.stop());
+          streamRef.current.getTracks().forEach(track => {
+            track.stop();
+          });
+          streamRef.current = null;
         }
 
-        // Gunakan ideal constraints agar lebih stabil di berbagai hardware (termasuk laptop)
-        const constraints = {
-            video: {
-                facingMode: { ideal: facingMode },
-                width: { ideal: 1280 },
-                height: { ideal: 720 }
-            },
-            audio: false
+        if (videoRef.current) {
+          videoRef.current.srcObject = null;
+        }
+
+        // Delay singkat agar hardware kamera di Android/iOS sempat rilis bersih
+        await new Promise(resolve => setTimeout(resolve, 80));
+        if (isCancelled) return;
+
+        const constraints: MediaStreamConstraints = {
+          video: {
+            facingMode: facingMode === 'user' ? 'user' : { ideal: 'environment' },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          },
+          audio: false
         };
 
-        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        let stream: MediaStream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia(constraints);
+        } catch (firstErr) {
+          console.warn('FacingMode constraint gagal, mencoba fallback standar:', firstErr);
+          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        }
+
+        if (isCancelled) {
+          stream.getTracks().forEach(track => track.stop());
+          return;
+        }
+
         streamRef.current = stream;
         setHasCameraPermission(true);
 
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
-          
-          // Penanganan jika stream terputus di tengah jalan
+          videoRef.current.play().catch(e => console.warn('Video play error:', e));
+
           stream.getTracks().forEach(track => {
             track.onended = () => {
-                if (kioskState === 'SCANNING' && activeScanMode === 'CAMERA') {
-                    setCameraRetryCount(prev => prev + 1);
-                }
+              if (!isCancelled && kioskState === 'SCANNING' && activeScanMode === 'CAMERA') {
+                setCameraRetryCount(prev => prev + 1);
+              }
             };
           });
         }
       } catch (error: any) {
         console.error('Error inisialisasi kamera:', error);
-        setHasCameraPermission(false);
+        if (!isCancelled) {
+          setHasCameraPermission(false);
+          toast({
+            title: "Gagal Mengakses Kamera",
+            description: "Pastikan izin kamera telah diberikan di browser HP / Laptop Anda.",
+            variant: "destructive"
+          });
+        }
       }
     };
 
     if (kioskState === 'SCANNING' && activeScanMode === 'CAMERA') {
-        getCameraPermission();
+      getCameraPermission();
     } else {
-        if (streamRef.current) {
-            streamRef.current.getTracks().forEach(track => track.stop());
-            streamRef.current = null;
-        }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
     }
 
     return () => {
-        if (streamRef.current) {
-            streamRef.current.getTracks().forEach(track => track.stop());
-            streamRef.current = null;
-        }
-    }
+      isCancelled = true;
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
+    };
   }, [facingMode, kioskState, cameraRetryCount, activeScanMode]);
 
   useEffect(() => {
@@ -284,53 +322,61 @@ export default function KioskPage() {
     let lastScanTime = 0;
 
     const tick = (time: number) => {
-      // Throttle: Hanya lakukan pemindaian setiap 150ms untuk menghemat daya & mencegah kedipan
-      if (time - lastScanTime < 150) {
-          animationFrameId = requestAnimationFrame(tick);
-          return;
+      // Throttle pemindaian 130ms (sekitar 8 fps) agar sangat ringan di HP/Laptop tanpa overheating
+      if (time - lastScanTime < 130) {
+        animationFrameId = requestAnimationFrame(tick);
+        return;
       }
       lastScanTime = time;
 
-      if (kioskState === 'SCANNING' && activeScanMode === 'CAMERA' && !processingRef.current && videoRef.current && videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA && canvasRef.current) {
+      if (
+        kioskState === 'SCANNING' && 
+        activeScanMode === 'CAMERA' && 
+        !processingRef.current && 
+        videoRef.current && 
+        videoRef.current.readyState >= 2 && 
+        canvasRef.current
+      ) {
         const video = videoRef.current;
         const canvas = canvasRef.current;
         const context = canvas.getContext('2d', { willReadFrequently: true });
-        
-        if (context) {
-            // Ukuran pemrosesan yang lebih kecil agar ringan di laptop
-            const processWidth = 480;
-            const processHeight = Math.floor((video.videoHeight / video.videoWidth) * processWidth);
-            
+
+        if (context && video.videoWidth > 0 && video.videoHeight > 0) {
+          // Downscale resolusi parsing jsQR ke 360px agar pemrosesan super cepat
+          const processWidth = 360;
+          const processHeight = Math.floor((video.videoHeight / video.videoWidth) * processWidth);
+
+          if (canvas.width !== processWidth || canvas.height !== processHeight) {
             canvas.width = processWidth;
             canvas.height = processHeight;
+          }
 
-            // Handle mirroring hanya untuk tampilan 'user' tanpa membebani render
-            context.setTransform(1, 0, 0, 1, 0, 0);
-            if (facingMode === 'user') {
-                context.translate(processWidth, 0);
-                context.scale(-1, 1);
-            }
-            
-            context.drawImage(video, 0, 0, processWidth, processHeight);
+          context.setTransform(1, 0, 0, 1, 0, 0);
+          if (facingMode === 'user') {
+            context.translate(processWidth, 0);
+            context.scale(-1, 1);
+          }
 
-            const imageData = context.getImageData(0, 0, processWidth, processHeight);
-            const code = jsQR(imageData.data, processWidth, processHeight, {
-                inversionAttempts: 'dontInvert',
-            });
+          context.drawImage(video, 0, 0, processWidth, processHeight);
+          const imageData = context.getImageData(0, 0, processWidth, processHeight);
 
-            if (code && code.data) {
-                processingRef.current = true; 
-                handleScanResult(code.data);
-            }
+          const code = jsQR(imageData.data, processWidth, processHeight, {
+            inversionAttempts: 'dontInvert',
+          });
+
+          if (code && code.data) {
+            processingRef.current = true;
+            handleScanResult(code.data);
+          }
         }
       }
       animationFrameId = requestAnimationFrame(tick);
     };
 
     if (hasCameraPermission && kioskState === 'SCANNING' && activeScanMode === 'CAMERA') {
-       animationFrameId = requestAnimationFrame(tick);
+      animationFrameId = requestAnimationFrame(tick);
     }
-   
+
     return () => {
       cancelAnimationFrame(animationFrameId);
     };
@@ -490,16 +536,23 @@ export default function KioskPage() {
              <video 
                 ref={videoRef} 
                 className={cn(
-                    "w-full h-full object-cover opacity-60 transition-all duration-1000",
+                    "w-full h-full object-cover transition-all duration-500",
                     facingMode === 'user' && "-scale-x-100",
-                    (kioskState !== 'SCANNING') && "blur-[100px] opacity-30 scale-125"
+                    kioskState === 'SCANNING' && activeScanMode === 'CAMERA'
+                      ? "opacity-100 blur-0 scale-100"
+                      : "blur-[100px] opacity-20 scale-125"
                 )} 
                 autoPlay 
                 playsInline 
                 muted 
             />
             <canvas ref={canvasRef} className="hidden" />
-            <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-black/70" />
+            <div className={cn(
+              "absolute inset-0 transition-opacity duration-500 pointer-events-none",
+              activeScanMode === 'CAMERA' && kioskState === 'SCANNING'
+                ? "bg-gradient-to-t from-black/80 via-transparent to-black/80"
+                : "bg-gradient-to-t from-black via-black/60 to-black/90"
+            )} />
         </div>
 
         {/* UI Kepala */}
@@ -668,25 +721,32 @@ export default function KioskPage() {
 
                     {/* TAMPILAN MODE 2: KAMERA WEB / HP */}
                     {activeScanMode === 'CAMERA' && (
-                        <div className="flex flex-col items-center w-full space-y-6 animate-in fade-in duration-300">
-                            {/* Visual Frame Scanner Kamera */}
-                            <div className="relative w-64 h-64 sm:w-80 sm:h-80 border border-white/10 rounded-[3.5rem] flex items-center justify-center overflow-hidden bg-black/40 backdrop-blur-md shadow-2xl">
-                                <div className="absolute top-0 left-0 w-14 h-14 border-t-4 border-l-4 border-primary rounded-tl-[3.5rem]" />
-                                <div className="absolute top-0 right-0 w-14 h-14 border-t-4 border-r-4 border-primary rounded-tr-[3.5rem]" />
-                                <div className="absolute bottom-0 left-0 w-14 h-14 border-b-4 border-l-4 border-primary rounded-bl-[3.5rem]" />
-                                <div className="absolute bottom-0 right-0 w-14 h-14 border-b-4 border-r-4 border-primary rounded-br-[3.5rem]" />
+                        <div className="flex flex-col items-center w-full space-y-4 sm:space-y-5 animate-in fade-in duration-300">
+                            {/* Visual Frame Scanner Kamera - BENAR-BENAR TRANSPARAN TANPA BLUR DI TENGAH */}
+                            <div className="relative w-64 h-64 sm:w-80 sm:h-80 border-2 border-blue-500/30 rounded-3xl sm:rounded-[2.5rem] flex items-center justify-center overflow-hidden bg-transparent shadow-[0_0_50px_rgba(37,99,235,0.25)]">
+                                {/* Siku Sudut Mengkilap */}
+                                <div className="absolute top-0 left-0 w-12 h-12 border-t-4 border-l-4 border-blue-400 rounded-tl-2xl sm:rounded-tl-[2rem]" />
+                                <div className="absolute top-0 right-0 w-12 h-12 border-t-4 border-r-4 border-blue-400 rounded-tr-2xl sm:rounded-tr-[2rem]" />
+                                <div className="absolute bottom-0 left-0 w-12 h-12 border-b-4 border-l-4 border-blue-400 rounded-bl-2xl sm:rounded-bl-[2rem]" />
+                                <div className="absolute bottom-0 right-0 w-12 h-12 border-b-4 border-r-4 border-blue-400 rounded-br-2xl sm:rounded-br-[2rem]" />
                                 
-                                <div className="absolute w-full h-1.5 bg-primary/80 shadow-[0_0_25px_rgba(59,130,246,1)] animate-[bounce_2.5s_infinite]" />
+                                {/* Garis Laser Pemindai Halus */}
+                                <div className="absolute w-full h-1 bg-gradient-to-r from-transparent via-blue-400 to-transparent shadow-[0_0_20px_rgba(59,130,246,1)] animate-[bounce_2s_infinite]" />
                                 
-                                <div className="flex flex-col items-center gap-3 text-white/20">
-                                    <QrCode className="h-16 w-16" />
-                                    <p className="text-[10px] font-black text-center px-8 uppercase tracking-[0.3em]">Hadapkan Kartu QR ke Kamera</p>
-                                </div>
+                                {/* Indikator Status Memuat Kamera (Hanya Tampil Jika Kamera Belum Aktif) */}
+                                {!hasCameraPermission && (
+                                  <div className="flex flex-col items-center gap-2 p-4 text-center bg-black/80 rounded-2xl border border-red-500/30 text-red-400">
+                                    <AlertCircle className="h-8 w-8 animate-bounce" />
+                                    <p className="text-xs font-bold">Mempersiapkan Kamera...</p>
+                                  </div>
+                                )}
                             </div>
 
-                            <div className="text-center space-y-2">
-                                <p className="text-xs text-white/70 font-semibold">
-                                    Arahkan kode QR kartu siswa ke lensa kamera laptop / HP Anda
+                            {/* Teks Petunjuk Jelas Di Luar Bingkai Pindai */}
+                            <div className="text-center bg-black/70 backdrop-blur-md px-5 py-2.5 rounded-full border border-white/10 shadow-lg">
+                                <p className="text-xs text-white font-bold flex items-center justify-center gap-2">
+                                    <QrCode className="h-4 w-4 text-blue-400 shrink-0" />
+                                    <span>Arahkan QR kartu siswa tepat ke dalam kotak lensa</span>
                                 </p>
                             </div>
                         </div>
