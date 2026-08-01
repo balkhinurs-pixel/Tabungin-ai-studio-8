@@ -172,92 +172,95 @@ export default function KioskSettlementModal({ isOpen, onClose }: KioskSettlemen
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
-      <div className="bg-slate-900 border border-slate-700/80 rounded-3xl w-full max-w-2xl text-white shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 overflow-y-auto animate-in fade-in duration-200">
+      <div className="bg-slate-900 border border-slate-700/80 rounded-2xl sm:rounded-3xl w-full max-w-2xl text-white shadow-2xl overflow-hidden flex flex-col max-h-[92vh] sm:max-h-[90vh]">
         
         {/* Header Modal */}
-        <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950/80">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
-              <Calculator className="h-5 w-5" />
+        <div className="p-3.5 sm:p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950/80 shrink-0">
+          <div className="flex items-center gap-2.5 sm:gap-3">
+            <div className="h-9 w-9 sm:h-10 sm:w-10 rounded-xl sm:rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+              <Calculator className="h-4 w-4 sm:h-5 sm:w-5" />
             </div>
             <div>
-              <h2 className="text-base font-black tracking-tight text-white">Rekap & Selisih Kas Penjaga Kios</h2>
-              <p className="text-[11px] text-slate-400 font-medium">Laci Kasir • Kios Penarikan Tunai Mandiri</p>
+              <h2 className="text-sm sm:text-base font-black tracking-tight text-white leading-tight">Rekap Kas Penjaga Kios</h2>
+              <p className="text-[10px] sm:text-[11px] text-slate-400 font-medium">Laci Kasir • Kios Penarikan Tunai Mandiri</p>
             </div>
           </div>
 
-          <Button variant="ghost" size="icon" onClick={onClose} className="rounded-full h-9 w-9 text-slate-400 hover:text-white hover:bg-slate-800">
-            <X className="h-5 w-5" />
+          <Button variant="ghost" size="icon" onClick={onClose} className="rounded-full h-8 w-8 sm:h-9 sm:w-9 text-slate-400 hover:text-white hover:bg-slate-800 shrink-0">
+            <X className="h-4 w-4 sm:h-5 sm:w-5" />
           </Button>
         </div>
 
-        {/* Navigation Tabs */}
-        <div className="grid grid-cols-3 gap-1 p-2 bg-slate-950/40 border-b border-slate-800 text-xs font-bold px-4">
+        {/* Navigation Tabs - Responsive Labels */}
+        <div className="grid grid-cols-3 gap-1 p-1.5 sm:p-2 bg-slate-950/40 border-b border-slate-800 text-[11px] sm:text-xs font-bold px-2 sm:px-4 shrink-0">
           <button
             type="button"
             onClick={() => setActiveTab('SUMMARY')}
             className={cn(
-              "py-2.5 rounded-xl transition-all flex items-center justify-center gap-2",
+              "py-2 sm:py-2.5 rounded-lg sm:rounded-xl transition-all flex items-center justify-center gap-1 sm:gap-2 px-1 text-center truncate",
               activeTab === 'SUMMARY' ? "bg-primary text-white font-black shadow-md" : "text-slate-400 hover:text-white"
             )}
           >
-            <ReceiptText className="h-4 w-4" /> 1. Data Sistem
+            <ReceiptText className="h-3.5 w-3.5 shrink-0 hidden xs:inline" /> 
+            <span><span className="hidden sm:inline">1. Data </span>Sistem</span>
           </button>
           <button
             type="button"
             onClick={() => setActiveTab('DENOMINATIONS')}
             className={cn(
-              "py-2.5 rounded-xl transition-all flex items-center justify-center gap-2",
+              "py-2 sm:py-2.5 rounded-lg sm:rounded-xl transition-all flex items-center justify-center gap-1 sm:gap-2 px-1 text-center truncate",
               activeTab === 'DENOMINATIONS' ? "bg-primary text-white font-black shadow-md" : "text-slate-400 hover:text-white"
             )}
           >
-            <Coins className="h-4 w-4" /> 2. Hitung Fisik
+            <Coins className="h-3.5 w-3.5 shrink-0 hidden xs:inline" /> 
+            <span><span className="hidden sm:inline">2. Hitung </span>Fisik</span>
           </button>
           <button
             type="button"
             onClick={() => setActiveTab('RESULT')}
             className={cn(
-              "py-2.5 rounded-xl transition-all flex items-center justify-center gap-2",
+              "py-2 sm:py-2.5 rounded-lg sm:rounded-xl transition-all flex items-center justify-center gap-1 sm:gap-2 px-1 text-center truncate",
               activeTab === 'RESULT' ? "bg-emerald-600 text-white font-black shadow-md" : "text-slate-400 hover:text-white"
             )}
           >
-            <CheckCircle2 className="h-4 w-4" /> 3. Rekap & Selisih
+            <CheckCircle2 className="h-3.5 w-3.5 shrink-0 hidden xs:inline" /> 
+            <span><span className="hidden sm:inline">3. Rekap & </span>Selisih</span>
           </button>
         </div>
 
         {/* Content Body */}
-        <div className="p-5 overflow-y-auto space-y-5 flex-1">
+        <div className="p-3.5 sm:p-5 overflow-y-auto space-y-4 sm:space-y-5 flex-1">
 
           {/* TAB 1: DATA SISTEM & MODAL AWAL */}
           {activeTab === 'SUMMARY' && (
-            <div className="space-y-4 animate-in fade-in duration-200">
+            <div className="space-y-3.5 sm:space-y-4 animate-in fade-in duration-200">
               
               {/* Card Modal Kas Awal */}
-              <div className="bg-slate-800/60 border border-slate-700/60 p-4 rounded-2xl space-y-3">
-                <div className="flex justify-between items-center">
+              <div className="bg-slate-800/60 border border-slate-700/60 p-3.5 sm:p-4 rounded-xl sm:rounded-2xl space-y-2.5">
+                <div className="flex flex-wrap justify-between items-center gap-1">
                   <div className="flex items-center gap-2">
-                    <Banknote className="h-4 w-4 text-emerald-400" />
-                    <span className="text-xs font-black text-slate-300 uppercase tracking-wider">MODAL KAS AWAL SHIFT</span>
+                    <Banknote className="h-4 w-4 text-emerald-400 shrink-0" />
+                    <span className="text-[11px] sm:text-xs font-black text-slate-300 uppercase tracking-wider">MODAL KAS AWAL SHIFT</span>
                   </div>
                   <span className="text-[10px] text-slate-400 font-bold">Uang Fisik Diterima dari Bendahara</span>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                   <Input 
                     type="number"
                     value={initialCash}
                     onChange={(e) => handleSaveInitialCash(parseInt(e.target.value) || 0)}
                     placeholder="Masukkan nominal modal kas..."
-                    className="h-11 bg-slate-900 border-slate-700 font-black text-emerald-400 text-base rounded-xl"
+                    className="h-10 sm:h-11 bg-slate-900 border-slate-700 font-black text-emerald-400 text-sm sm:text-base rounded-xl flex-1"
                   />
-                  <div className="flex gap-1">
+                  <div className="flex gap-1.5 justify-end">
                     {[500000, 1000000, 2000000].map(amt => (
                       <button
                         key={amt}
                         type="button"
                         onClick={() => handleSaveInitialCash(amt)}
-                        className="px-2.5 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-[10px] font-bold text-slate-200"
+                        className="px-2.5 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-[10px] font-bold text-slate-200 transition-colors flex-1 sm:flex-none text-center"
                       >
                         {(amt/1000)}k
                       </button>
@@ -266,29 +269,29 @@ export default function KioskSettlementModal({ isOpen, onClose }: KioskSettlemen
                 </div>
               </div>
 
-              {/* Grid Metric System Summary */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-emerald-950/40 border border-emerald-500/20 p-4 rounded-2xl space-y-1">
+              {/* Grid Metric System Summary - Responsive Column on Mobile */}
+              <div className="grid grid-cols-1 xs:grid-cols-2 gap-2.5 sm:gap-3">
+                <div className="bg-emerald-950/40 border border-emerald-500/20 p-3.5 sm:p-4 rounded-xl sm:rounded-2xl space-y-1">
                   <span className="text-[10px] font-black text-emerald-400/80 uppercase tracking-wider">MODAL AWAL KAS</span>
-                  <p className="text-2xl font-black text-emerald-400">Rp {initialCash.toLocaleString('id-ID')}</p>
-                  <p className="text-[10px] text-slate-400">Modal uang kertas di laci</p>
+                  <p className="text-xl sm:text-2xl font-black text-emerald-400 tracking-tight">Rp {initialCash.toLocaleString('id-ID')}</p>
+                  <p className="text-[10px] text-slate-400 font-medium">Modal uang kertas di laci</p>
                 </div>
 
-                <div className="bg-rose-950/40 border border-rose-500/20 p-4 rounded-2xl space-y-1">
+                <div className="bg-rose-950/40 border border-rose-500/20 p-3.5 sm:p-4 rounded-xl sm:rounded-2xl space-y-1">
                   <span className="text-[10px] font-black text-rose-400/80 uppercase tracking-wider">TOTAL PENARIKAN SISWA</span>
-                  <p className="text-2xl font-black text-rose-400">- Rp {summary.totalAmount.toLocaleString('id-ID')}</p>
-                  <p className="text-[10px] text-slate-400">{summary.totalCount} Siswa menarik tunai hari ini</p>
+                  <p className="text-xl sm:text-2xl font-black text-rose-400 tracking-tight">- Rp {summary.totalAmount.toLocaleString('id-ID')}</p>
+                  <p className="text-[10px] text-slate-400 font-medium">{summary.totalCount} Siswa menarik tunai hari ini</p>
                 </div>
               </div>
 
-              {/* Target Calculation Box */}
-              <div className="bg-primary/10 border border-primary/30 p-4 rounded-2xl flex items-center justify-between">
-                <div>
-                  <span className="text-[10px] font-black text-primary uppercase tracking-widest">EKSPEKTASI KAS DI LACI (SISTEM)</span>
-                  <h3 className="text-2xl font-black text-white">Rp {expectedCashInDrawer.toLocaleString('id-ID')}</h3>
-                  <p className="text-[10px] text-slate-400">Rumus: Modal Awal ({initialCash.toLocaleString('id-ID')}) - Penarikan ({summary.totalAmount.toLocaleString('id-ID')})</p>
+              {/* Target Calculation Box - Stacked layout on mobile for zero side squishing */}
+              <div className="bg-primary/10 border border-primary/30 p-3.5 sm:p-4 rounded-xl sm:rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="space-y-1">
+                  <span className="text-[10px] font-black text-primary uppercase tracking-widest block">EKSPEKTASI KAS DI LACI (SISTEM)</span>
+                  <h3 className="text-xl sm:text-2xl font-black text-white tracking-tight">Rp {expectedCashInDrawer.toLocaleString('id-ID')}</h3>
+                  <p className="text-[10px] text-slate-400 font-medium">Rumus: Modal Awal ({initialCash.toLocaleString('id-ID')}) - Penarikan ({summary.totalAmount.toLocaleString('id-ID')})</p>
                 </div>
-                <Button onClick={() => setActiveTab('DENOMINATIONS')} className="bg-primary text-white font-bold text-xs h-10 px-4 rounded-xl">
+                <Button onClick={() => setActiveTab('DENOMINATIONS')} className="bg-primary hover:bg-primary/90 text-white font-bold text-xs h-10 px-4 rounded-xl w-full sm:w-auto shrink-0 shadow-md">
                   Lanjut Hitung Uang Fisik <ArrowRight className="ml-1.5 h-4 w-4" />
                 </Button>
               </div>
@@ -297,22 +300,22 @@ export default function KioskSettlementModal({ isOpen, onClose }: KioskSettlemen
               <div className="space-y-2">
                 <div className="flex justify-between items-center text-xs font-bold text-slate-400">
                   <span>Daftar Penarikan Tunai Hari Ini ({summary.totalCount})</span>
-                  <button onClick={fetchDailySummary} className="text-primary hover:underline text-[11px] flex items-center gap-1">
+                  <button onClick={fetchDailySummary} className="text-primary hover:underline text-[11px] flex items-center gap-1 font-bold">
                     <RotateCcw className="h-3 w-3" /> Refresh Data
                   </button>
                 </div>
 
-                <div className="bg-slate-950/60 border border-slate-800 rounded-2xl p-2 max-h-48 overflow-y-auto divide-y divide-slate-800/60 text-xs">
+                <div className="bg-slate-950/60 border border-slate-800 rounded-xl sm:rounded-2xl p-2 max-h-48 overflow-y-auto divide-y divide-slate-800/60 text-xs">
                   {summary.transactions.length === 0 ? (
                     <div className="text-center py-6 text-slate-500 font-medium">Belum ada penarikan tunai hari ini.</div>
                   ) : (
                     summary.transactions.map(tx => (
-                      <div key={tx.id} className="p-2.5 flex items-center justify-between hover:bg-slate-900/50 rounded-xl">
-                        <div>
-                          <p className="font-bold text-white">{tx.studentName} <span className="text-[10px] text-slate-400">({tx.studentClass || tx.studentNis})</span></p>
-                          <p className="text-[10px] text-slate-400">{format(new Date(tx.createdAt), 'HH:mm')} • {tx.description}</p>
+                      <div key={tx.id} className="p-2.5 flex items-center justify-between hover:bg-slate-900/50 rounded-xl gap-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-bold text-white truncate text-xs">{tx.studentName} <span className="text-[10px] text-slate-400 font-normal">({tx.studentClass || tx.studentNis})</span></p>
+                          <p className="text-[10px] text-slate-400 truncate">{format(new Date(tx.createdAt), 'HH:mm')} • {tx.description}</p>
                         </div>
-                        <span className="font-black text-rose-400 text-xs">- Rp {tx.amount.toLocaleString('id-ID')}</span>
+                        <span className="font-black text-rose-400 text-xs shrink-0">- Rp {tx.amount.toLocaleString('id-ID')}</span>
                       </div>
                     ))
                   )}
@@ -324,39 +327,40 @@ export default function KioskSettlementModal({ isOpen, onClose }: KioskSettlemen
 
           {/* TAB 2: HITUNG PECAHAN LEMBAR UANG FISIK */}
           {activeTab === 'DENOMINATIONS' && (
-            <div className="space-y-4 animate-in fade-in duration-200">
-              <div className="flex justify-between items-center bg-slate-800/40 p-3 rounded-2xl border border-slate-700/40">
+            <div className="space-y-3.5 sm:space-y-4 animate-in fade-in duration-200">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 bg-slate-800/40 p-3 rounded-xl sm:rounded-2xl border border-slate-700/40">
                 <div>
                   <h4 className="text-xs font-black text-white">Hitung Lembaran Uang Fisik</h4>
-                  <p className="text-[10px] text-slate-400">Masukkan jumlah lembar uang kertas/koin yang ada di laci kasir saat ini.</p>
+                  <p className="text-[10px] text-slate-400 font-medium">Masukkan jumlah lembar uang kertas/koin yang ada di laci kasir saat ini.</p>
                 </div>
                 <button 
+                  type="button"
                   onClick={() => setIsManualOverride(!isManualOverride)}
-                  className="text-[10px] text-emerald-400 font-bold hover:underline"
+                  className="text-[10px] text-emerald-400 font-bold hover:underline self-start sm:self-auto shrink-0"
                 >
-                  {isManualOverride ? "Hitung Per Lembar" : "Ketik Total Manual"}
+                  {isManualOverride ? "← Hitung Per Lembar" : "Ketik Total Manual →"}
                 </button>
               </div>
 
               {!isManualOverride ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-2 gap-2 sm:gap-2.5">
                   {DENOMINATIONS.map(denom => {
                     const qty = counts[denom.value] || 0;
                     const subtotal = denom.value * qty;
                     return (
-                      <div key={denom.value} className="bg-slate-800/60 border border-slate-700/60 p-2.5 rounded-2xl flex items-center justify-between gap-2">
-                        <div>
-                          <span className="text-xs font-black text-slate-200">{denom.label}</span>
-                          <p className="text-[10px] text-emerald-400 font-bold">Subtotal: Rp {subtotal.toLocaleString('id-ID')}</p>
+                      <div key={denom.value} className="bg-slate-800/60 border border-slate-700/60 p-2.5 rounded-xl sm:rounded-2xl flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <span className="text-xs font-black text-slate-200 block">{denom.label}</span>
+                          <p className="text-[10px] text-emerald-400 font-bold truncate">Rp {subtotal.toLocaleString('id-ID')}</p>
                         </div>
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-1 shrink-0">
                           <Input 
                             type="number"
                             min="0"
                             value={qty || ''}
                             onChange={(e) => handleDenomChange(denom.value, e.target.value)}
                             placeholder="0"
-                            className="w-16 h-9 bg-slate-900 border-slate-700 font-black text-center text-xs text-white rounded-xl"
+                            className="w-16 h-8 sm:h-9 bg-slate-900 border-slate-700 font-black text-center text-xs text-white rounded-xl"
                           />
                           <span className="text-[10px] text-slate-400 font-bold">Lbr</span>
                         </div>
@@ -365,26 +369,26 @@ export default function KioskSettlementModal({ isOpen, onClose }: KioskSettlemen
                   })}
                 </div>
               ) : (
-                <div className="bg-slate-800/60 border border-slate-700/60 p-4 rounded-2xl space-y-2">
-                  <label className="text-xs font-black text-slate-300">TOTAL FISIK REAL DI LACI (RP)</label>
+                <div className="bg-slate-800/60 border border-slate-700/60 p-4 rounded-xl sm:rounded-2xl space-y-2">
+                  <label className="text-xs font-black text-slate-300 block">TOTAL FISIK REAL DI LACI (RP)</label>
                   <Input 
                     type="number"
                     value={manualPhysicalCash}
                     onChange={(e) => setManualPhysicalCash(e.target.value)}
                     placeholder="Contoh: 750000"
-                    className="h-12 text-lg font-black bg-slate-900 border-emerald-500/50 text-emerald-400 rounded-xl"
+                    className="h-11 sm:h-12 text-base sm:text-lg font-black bg-slate-900 border-emerald-500/50 text-emerald-400 rounded-xl"
                   />
-                  <p className="text-[10px] text-slate-400">Ketik total langsung jika tidak ingin menghitung per lembar pecahan.</p>
+                  <p className="text-[10px] text-slate-400 font-medium">Ketik total langsung jika tidak ingin menghitung per lembar pecahan.</p>
                 </div>
               )}
 
-              {/* Total Physical Banner */}
-              <div className="bg-emerald-950/50 border border-emerald-500/30 p-4 rounded-2xl flex justify-between items-center">
+              {/* Total Physical Banner - Stacked layout on mobile */}
+              <div className="bg-emerald-950/50 border border-emerald-500/30 p-3.5 sm:p-4 rounded-xl sm:rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                  <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">TOTAL UANG FISIK DI LACI</span>
-                  <h3 className="text-2xl font-black text-emerald-400">Rp {physicalCashInDrawer.toLocaleString('id-ID')}</h3>
+                  <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest block">TOTAL UANG FISIK DI LACI</span>
+                  <h3 className="text-xl sm:text-2xl font-black text-emerald-400 tracking-tight">Rp {physicalCashInDrawer.toLocaleString('id-ID')}</h3>
                 </div>
-                <Button onClick={() => setActiveTab('RESULT')} className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs h-10 px-4 rounded-xl">
+                <Button onClick={() => setActiveTab('RESULT')} className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs h-10 px-4 rounded-xl w-full sm:w-auto shrink-0 shadow-md">
                   Lihat Hasil & Selisih <ArrowRight className="ml-1.5 h-4 w-4" />
                 </Button>
               </div>
@@ -393,11 +397,11 @@ export default function KioskSettlementModal({ isOpen, onClose }: KioskSettlemen
 
           {/* TAB 3: HASIL REKAP, ANALISIS SELISIH & SIMPAN */}
           {activeTab === 'RESULT' && (
-            <div className="space-y-4 animate-in fade-in duration-200">
+            <div className="space-y-3.5 sm:space-y-4 animate-in fade-in duration-200">
               
               {/* Result Status Banner */}
               <div className={cn(
-                "p-4 rounded-2xl border flex items-center gap-3.5",
+                "p-3.5 sm:p-4 rounded-xl sm:rounded-2xl border flex items-start sm:items-center gap-3",
                 variance === 0 
                   ? "bg-emerald-950/60 border-emerald-500/40 text-emerald-300"
                   : variance < 0 
@@ -405,24 +409,24 @@ export default function KioskSettlementModal({ isOpen, onClose }: KioskSettlemen
                   : "bg-blue-950/60 border-blue-500/40 text-blue-300"
               )}>
                 <div className={cn(
-                  "h-12 w-12 rounded-2xl flex items-center justify-center shrink-0 text-white font-black text-lg shadow-md",
+                  "h-10 w-10 sm:h-12 sm:w-12 rounded-xl sm:rounded-2xl flex items-center justify-center shrink-0 text-white font-black shadow-md mt-0.5 sm:mt-0",
                   variance === 0 ? "bg-emerald-600" : variance < 0 ? "bg-rose-600" : "bg-blue-600"
                 )}>
-                  {variance === 0 ? <CheckCircle2 className="h-6 w-6" /> : <AlertTriangle className="h-6 w-6" />}
+                  {variance === 0 ? <CheckCircle2 className="h-5 w-5 sm:h-6 sm:w-6" /> : <AlertTriangle className="h-5 w-5 sm:h-6 sm:w-6" />}
                 </div>
 
-                <div>
-                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-black/40">
+                <div className="min-w-0 flex-1">
+                  <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-black/40">
                     STATUS REKAP: {variance === 0 ? "PAS / MATCHED 🟢" : variance < 0 ? "DEFISIT / MINUS 🔴" : "SURPLUS / LEBIH 🔵"}
                   </div>
-                  <h3 className="text-lg font-black tracking-tight mt-0.5">
+                  <h3 className="text-base sm:text-lg font-black tracking-tight mt-1 leading-tight">
                     {variance === 0 
                       ? "Uang Kas Laci Sesuai 100%!" 
                       : variance < 0 
                       ? `Selisih Kurang: Rp ${Math.abs(variance).toLocaleString('id-ID')}`
                       : `Selisih Lebih: Rp ${variance.toLocaleString('id-ID')}`}
                   </h3>
-                  <p className="text-[11px] opacity-80 font-medium">
+                  <p className="text-[10px] sm:text-[11px] opacity-80 font-medium leading-normal mt-0.5">
                     {variance === 0 
                       ? "Uang fisik di laci cocok dengan total penarikan sistem."
                       : variance < 0
@@ -433,24 +437,24 @@ export default function KioskSettlementModal({ isOpen, onClose }: KioskSettlemen
               </div>
 
               {/* Perbandingan Detail Metrics */}
-              <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 space-y-2 text-xs">
+              <div className="bg-slate-950 border border-slate-800 rounded-xl sm:rounded-2xl p-3.5 sm:p-4 space-y-2 text-xs">
                 <div className="flex justify-between py-1 border-b border-slate-800">
-                  <span className="text-slate-400">1. Modal Kas Awal:</span>
-                  <span className="font-bold text-white">Rp {initialCash.toLocaleString('id-ID')}</span>
+                  <span className="text-slate-400 text-[11px]">1. Modal Kas Awal:</span>
+                  <span className="font-bold text-white text-[11px]">Rp {initialCash.toLocaleString('id-ID')}</span>
                 </div>
                 <div className="flex justify-between py-1 border-b border-slate-800">
-                  <span className="text-slate-400">2. Total Penarikan Siswa:</span>
-                  <span className="font-bold text-rose-400">- Rp {summary.totalAmount.toLocaleString('id-ID')} ({summary.totalCount} Tx)</span>
+                  <span className="text-slate-400 text-[11px]">2. Total Penarikan Siswa:</span>
+                  <span className="font-bold text-rose-400 text-[11px]">- Rp {summary.totalAmount.toLocaleString('id-ID')} ({summary.totalCount} Tx)</span>
                 </div>
                 <div className="flex justify-between py-1 border-b border-slate-800 font-bold">
-                  <span className="text-slate-300">3. Kas Seharusnya (Sistem Target):</span>
-                  <span className="text-primary font-black">Rp {expectedCashInDrawer.toLocaleString('id-ID')}</span>
+                  <span className="text-slate-300 text-[11px]">3. Kas Seharusnya (Sistem Target):</span>
+                  <span className="text-primary font-black text-[11px]">Rp {expectedCashInDrawer.toLocaleString('id-ID')}</span>
                 </div>
                 <div className="flex justify-between py-1 border-b border-slate-800 font-bold">
-                  <span className="text-slate-300">4. Kas Fisik Real (Hasil Hitung Laci):</span>
-                  <span className="text-emerald-400 font-black">Rp {physicalCashInDrawer.toLocaleString('id-ID')}</span>
+                  <span className="text-slate-300 text-[11px]">4. Kas Fisik Real (Hasil Hitung Laci):</span>
+                  <span className="text-emerald-400 font-black text-[11px]">Rp {physicalCashInDrawer.toLocaleString('id-ID')}</span>
                 </div>
-                <div className="flex justify-between py-1.5 pt-2 text-sm font-black">
+                <div className="flex justify-between py-1.5 pt-2 text-xs sm:text-sm font-black">
                   <span>SELISIH AKHIR:</span>
                   <span className={variance === 0 ? "text-emerald-400" : variance < 0 ? "text-rose-400" : "text-blue-400"}>
                     {variance >= 0 ? `+ Rp ${variance.toLocaleString('id-ID')}` : `- Rp ${Math.abs(variance).toLocaleString('id-ID')}`}
@@ -459,7 +463,7 @@ export default function KioskSettlementModal({ isOpen, onClose }: KioskSettlemen
               </div>
 
               {/* Guard Name & Notes */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-slate-400 uppercase">Nama Penjaga Kios / Kasir</label>
                   <Input 
@@ -498,12 +502,12 @@ export default function KioskSettlementModal({ isOpen, onClose }: KioskSettlemen
                 <p className="text-[9px] text-center pt-2">Tanda Tangan Penjaga: ___________________</p>
               </div>
 
-              {/* Action Buttons */}
-              <div className="flex gap-2 pt-2">
+              {/* Action Buttons - Stacked on tiny mobile screens */}
+              <div className="flex flex-col sm:flex-row gap-2 pt-1">
                 <Button 
                   onClick={handlePrintReceipt} 
                   variant="outline" 
-                  className="flex-1 h-11 border-slate-700 bg-slate-800 text-slate-200 font-bold text-xs rounded-xl flex items-center justify-center gap-2"
+                  className="flex-1 h-10 sm:h-11 border-slate-700 bg-slate-800 text-slate-200 font-bold text-xs rounded-xl flex items-center justify-center gap-2"
                 >
                   <Printer className="h-4 w-4 text-emerald-400" /> Cetak Struk Rekap
                 </Button>
@@ -511,7 +515,7 @@ export default function KioskSettlementModal({ isOpen, onClose }: KioskSettlemen
                 <Button 
                   onClick={handleSaveSettlement} 
                   disabled={loading}
-                  className="flex-1 h-11 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs rounded-xl shadow-lg flex items-center justify-center gap-2"
+                  className="flex-1 h-10 sm:h-11 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs rounded-xl shadow-lg flex items-center justify-center gap-2"
                 >
                   <Save className="h-4 w-4" /> {loading ? "Menyimpan..." : "Simpan Rekap Shift"}
                 </Button>
