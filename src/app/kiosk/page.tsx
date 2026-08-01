@@ -21,7 +21,9 @@ import {
   QrCode,
   Usb,
   Keyboard,
-  Volume2
+  Volume2,
+  Coins,
+  Calculator
 } from 'lucide-react';
 import jsQR from 'jsqr';
 import { useToast } from '@/hooks/use-toast';
@@ -29,6 +31,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { getStudentKioskData, processKioskWithdrawal } from './actions';
+import KioskSettlementModal from './components/KioskSettlementModal';
 
 type KioskState = 'SCANNING' | 'MAIN_MENU' | 'PIN_INPUT' | 'WITHDRAW_MENU' | 'CUSTOM_AMOUNT' | 'REASON_SELECTION' | 'PROCESSING' | 'SUCCESS' | 'ERROR';
 
@@ -51,6 +54,7 @@ export default function KioskPage() {
   
   // States
   const [kioskState, setKioskState] = useState<KioskState>('SCANNING');
+  const [isSettlementOpen, setIsSettlementOpen] = useState(false);
   const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
   const [student, setStudent] = useState<any>(null);
@@ -475,6 +479,13 @@ export default function KioskPage() {
             </div>
             {kioskState === 'SCANNING' && (
                 <div className="flex gap-2">
+                    <Button 
+                        variant="ghost" 
+                        className="text-emerald-400 font-black text-[11px] rounded-full h-10 px-4 bg-emerald-500/10 border border-emerald-500/30 hover:bg-emerald-500/20 shadow-sm flex items-center gap-2" 
+                        onClick={() => setIsSettlementOpen(true)}
+                    >
+                        <Calculator className="h-4 w-4" /> Rekap Kas Penjaga
+                    </Button>
                     {activeScanMode === 'CAMERA' && (
                         <Button variant="ghost" className="text-white/60 text-[11px] font-bold rounded-full h-10 px-4 bg-white/10 border border-white/10" onClick={() => setFacingMode(f => f === 'user' ? 'environment' : 'user')}>
                             <RefreshCw className="mr-2 h-4 w-4" /> Ganti Kamera
@@ -1031,6 +1042,11 @@ export default function KioskPage() {
                 </div>
             </div>
         )}
+        {/* Modal Rekap & Selisih Kas Penjaga Kios */}
+        <KioskSettlementModal 
+          isOpen={isSettlementOpen} 
+          onClose={() => setIsSettlementOpen(false)} 
+        />
     </div>
   );
 }

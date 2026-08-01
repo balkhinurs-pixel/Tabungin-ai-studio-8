@@ -5,6 +5,7 @@ import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { createClient } from '@/lib/utils/supabase/server';
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { revalidatePath } from 'next/cache';
+import { triggerSingleStudentLowBalanceWA } from '../settings/fonnte-actions';
 
 /**
  * Mengambil daftar transaksi khusus untuk outlet yang sedang login dengan dukungan filter.
@@ -340,7 +341,7 @@ export async function processCantinePayment(params: {
 
         const { data: student, error: studentError } = await supabaseAdmin
             .from('students')
-            .select('daily_limit, transactions(amount, type, created_at)')
+            .select('user_id, daily_limit, transactions(amount, type, created_at)')
             .eq('id', studentId)
             .single();
 
@@ -400,6 +401,15 @@ export async function processCantinePayment(params: {
         });
 
         if (txError) throw txError;
+
+        // Auto trigger Fonnte Low Balance WA asynchronously
+        if (student.user_id) {
+            triggerSingleStudentLowBalanceWA({
+                studentId,
+                teacherUserId: student.user_id,
+                baseUrl: process.env.NEXT_PUBLIC_APP_URL || 'https://tabungin.vercel.app'
+            }).catch(e => console.error('[CANTINE_LOW_BALANCE_WA_ERR]', e));
+        }
 
         // 4. Potong Stok Item di DB jika ada
         if (items && items.length > 0) {

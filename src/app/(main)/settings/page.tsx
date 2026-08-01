@@ -12,6 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import type { Profile } from '@/types';
 import type { AuthUser } from '@supabase/supabase-js';
 import BackupRestore from './_components/BackupRestore';
+import FonnteSettings from './_components/FonnteSettings';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
@@ -82,11 +83,12 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold tracking-tight text-primary">Pengaturan Umum</h2>
+      <h2 className="text-2xl font-bold tracking-tight text-primary">Pengaturan Aplikasi</h2>
 
       <Tabs defaultValue="school" className="w-full">
-        <TabsList className="grid w-full grid-cols-2 mb-6 rounded-2xl bg-muted/50 p-1.5 h-14">
+        <TabsList className="grid w-full grid-cols-3 mb-6 rounded-2xl bg-muted/50 p-1.5 h-14">
           <TabsTrigger value="school" className="rounded-xl font-bold text-xs uppercase tracking-wider">Identitas Sekolah</TabsTrigger>
+          <TabsTrigger value="fonnte" className="rounded-xl font-bold text-xs uppercase tracking-wider">WA Saldo Minimal</TabsTrigger>
           <TabsTrigger value="data" className="rounded-xl font-bold text-xs uppercase tracking-wider">Backup Data</TabsTrigger>
         </TabsList>
 
@@ -129,6 +131,10 @@ export default function SettingsPage() {
                 )}
                 </CardContent>
             </Card>
+        </TabsContent>
+
+        <TabsContent value="fonnte" className="space-y-4">
+            <FonnteSettings />
         </TabsContent>
 
         <TabsContent value="data" className="space-y-4">
