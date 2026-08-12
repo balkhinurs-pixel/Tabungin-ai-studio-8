@@ -177,20 +177,50 @@ export async function deleteStudentAction(
     }
     
     const supabaseAdmin = getSupabaseAdmin();
-    // The student's row in the public.students table will be deleted automatically 
-    // by the CASCADE rule on the foreign key relationship to auth.users.
-    // So we only need to delete the auth user.
-    const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(studentId);
 
-    if (authError) {
-        return { success: false, message: `Gagal menghapus akun siswa: ${authError.message}` };
+    try {
+        // 1. Hapus transaksi terkait siswa
+        const { error: transErr } = await supabaseAdmin
+            .from('transactions')
+            .delete()
+            .eq('student_id', studentId);
+            
+        if (transErr) {
+            console.error('Warning deleting student transactions:', transErr.message);
+        }
+
+        // 2. Hapus baris di tabel public.students
+        const { error: studentErr } = await supabaseAdmin
+            .from('students')
+            .delete()
+            .eq('id', studentId);
+
+        if (studentErr) {
+            return { success: false, message: `Gagal menghapus data siswa dari database: ${studentErr.message}` };
+        }
+
+        // 3. Hapus profil terkait di tabel public.profiles (jika ada)
+        await supabaseAdmin
+            .from('profiles')
+            .delete()
+            .eq('id', studentId);
+
+        // 4. Hapus akun autentikasi di auth.users (abaikan jika user sudah terhapus)
+        const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(studentId);
+
+        if (authError && !authError.message?.toLowerCase().includes('not found')) {
+            console.warn(`Auth user delete warning for ${studentId}:`, authError.message);
+        }
+
+        revalidatePath('/profiles');
+        revalidatePath('/dashboard');
+        return {
+            success: true,
+            message: 'Siswa telah dihapus secara permanen.'
+        };
+    } catch (err: any) {
+        return { success: false, message: `Gagal menghapus siswa: ${err.message || err}` };
     }
-    
-    revalidatePath('/profiles');
-    return {
-        success: true,
-        message: 'Siswa telah dihapus secara permanen.'
-    };
 }
 
 
