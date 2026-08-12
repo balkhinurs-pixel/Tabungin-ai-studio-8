@@ -23,7 +23,7 @@ import {
   } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { PlusCircle, Download, Upload, Filter, Search, ShieldCheck, User, KeyRound, Pencil, Trash2, Save, Loader2, Info, ArrowRight, RotateCcw, SortAsc, X } from 'lucide-react';
+import { PlusCircle, Download, Upload, Filter, Search, ShieldCheck, User, KeyRound, Pencil, Trash2, Save, Loader2, Info, ArrowRight, RotateCcw, SortAsc, X, Archive, RefreshCw } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
@@ -36,6 +36,8 @@ type BoundAddStudentAction = (formData: FormData) => Promise<{success: boolean; 
 type BoundUpdateStudentAction = (formData: FormData) => Promise<{success: boolean; message: string; student?: Student;}>;
 type BoundDeleteStudentAction = (studentId: string) => Promise<{success: boolean; message: string;}>;
 type BoundImportStudentsAction = (csvContent: string) => Promise<{success: boolean; message: string; importedCount: number; newStudents: Student[]}>;
+type BoundArchiveStudentAction = (studentId: string) => Promise<{success: boolean; message: string;}>;
+type BoundRestoreStudentAction = (studentId: string) => Promise<{success: boolean; message: string;}>;
 
 
 interface ProfilesClientPageProps {
@@ -46,9 +48,23 @@ interface ProfilesClientPageProps {
     updateStudentAction: BoundUpdateStudentAction;
     deleteStudentAction: BoundDeleteStudentAction;
     importStudentsAction: BoundImportStudentsAction;
+    archiveStudentAction: BoundArchiveStudentAction;
+    restoreStudentAction: BoundRestoreStudentAction;
 }
 
-const EditStudentDialog = ({ student, onStudentUpdated, updateStudentAction }: { student: Student; onStudentUpdated: (updatedStudent: Student) => void; updateStudentAction: BoundUpdateStudentAction }) => {
+const EditStudentDialog = ({ 
+    student, 
+    onStudentUpdated, 
+    updateStudentAction,
+    archiveStudentAction,
+    onStudentArchived
+}: { 
+    student: Student; 
+    onStudentUpdated: (updatedStudent: Student) => void; 
+    updateStudentAction: BoundUpdateStudentAction;
+    archiveStudentAction: BoundArchiveStudentAction;
+    onStudentArchived: (studentId: string, updatedNisSuffix: string, updatedName: string) => void;
+}) => {
     const { toast } = useToast();
     
     const [nis, setNis] = useState(student?.nis || '');
@@ -58,6 +74,8 @@ const EditStudentDialog = ({ student, onStudentUpdated, updateStudentAction }: {
     const [pin, setPin] = useState('');
     const [open, setOpen] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
+    const [archiveLoading, setArchiveLoading] = useState(false);
     const formRef = useRef<HTMLFormElement>(null);
 
     useEffect(() => {
@@ -67,6 +85,7 @@ const EditStudentDialog = ({ student, onStudentUpdated, updateStudentAction }: {
             setStudentClass(student.class);
             setWhatsappNumber(student.whatsapp_number || '');
             setPin('');
+            setShowArchiveConfirm(false);
         }
     }, [student, open]);
 
@@ -100,6 +119,28 @@ const EditStudentDialog = ({ student, onStudentUpdated, updateStudentAction }: {
         }
     }
 
+    const handleArchiveDirect = async () => {
+        setArchiveLoading(true);
+        const result = await archiveStudentAction(student.id);
+        setArchiveLoading(false);
+
+        if (result.success) {
+            const timestamp = Math.floor(Date.now() / 1000);
+            onStudentArchived(student.id, `_arc_${timestamp}`, `${student.name} (Diarsipkan)`);
+            toast({
+                title: 'Siswa Diarsipkan',
+                description: result.message,
+            });
+            setOpen(false);
+        } else {
+            toast({
+                title: 'Gagal Mengarsipkan',
+                description: result.message,
+                variant: 'destructive',
+            });
+        }
+    };
+
     const handlePinChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const value = e.target.value.replace(/\D/g, '').slice(0, 6);
         setPin(value);
@@ -108,7 +149,7 @@ const EditStudentDialog = ({ student, onStudentUpdated, updateStudentAction }: {
     return (
         <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-                <Button variant="outline" size="icon" className='h-8 w-8 border-yellow-500 text-yellow-500 hover:bg-yellow-50 hover:text-yellow-600'>
+                <Button variant="outline" size="icon" className='h-8 w-8 border-yellow-500 text-yellow-500 hover:bg-yellow-50 hover:text-yellow-600' title="Ubah Profil">
                     <Pencil className="h-4 w-4" />
                 </Button>
             </DialogTrigger>
@@ -117,7 +158,7 @@ const EditStudentDialog = ({ student, onStudentUpdated, updateStudentAction }: {
                 <DialogHeader>
                     <DialogTitle>Ubah Profil Siswa</DialogTitle>
                 </DialogHeader>
-                <div className="grid gap-4 py-4">
+                <div className="grid gap-4 py-4 max-h-[70vh] overflow-y-auto pr-1">
                     <input type="hidden" name="id" value={student.id} />
                     <div className="space-y-2">
                         <Label htmlFor="edit-nis">NIS (Nomor Induk Siswa)</Label>
@@ -135,7 +176,7 @@ const EditStudentDialog = ({ student, onStudentUpdated, updateStudentAction }: {
                         <Label htmlFor="edit-whatsapp">Nomor WhatsApp Wali (Opsional)</Label>
                         <Input id="edit-whatsapp" name="whatsapp_number" value={whatsappNumber} onChange={(e) => setWhatsappNumber(e.target.value)} placeholder="Contoh: 6281234567890" />
                     </div>
-                    <div className="space-y-2">
+                    <div className="space-y-2 pb-2">
                         <div className="flex items-center justify-between">
                             <Label htmlFor="edit-pin">PIN Siswa (6 Digit Angka)</Label>
                             <Button 
@@ -163,12 +204,40 @@ const EditStudentDialog = ({ student, onStudentUpdated, updateStudentAction }: {
                            </AlertDescription>
                         </Alert>
                     </div>
+
+                    {showArchiveConfirm ? (
+                        <div className="p-3 bg-blue-50 border border-blue-200 rounded-md space-y-2 text-sm text-blue-950">
+                            <p className="font-semibold text-xs uppercase tracking-wider text-blue-800">Konfirmasi Pengarsipan</p>
+                            <p className="text-xs">
+                                Mengarsipkan <strong>{student.name}</strong> akan membebaskan NIS aslinya agar dapat digunakan siswa lain, menonaktifkan login, namun tetap menjaga riwayat tabungannya.
+                            </p>
+                            <div className="flex gap-2 justify-end">
+                                <Button size="sm" variant="ghost" type="button" onClick={() => setShowArchiveConfirm(false)} disabled={archiveLoading}>
+                                    Batal
+                                </Button>
+                                <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white" type="button" onClick={handleArchiveDirect} disabled={archiveLoading}>
+                                    {archiveLoading && <Loader2 className="mr-2 h-3 w-3 animate-spin" />}
+                                    Ya, Arsipkan
+                                </Button>
+                            </div>
+                        </div>
+                    ) : (
+                        !student.nis.includes('_arc_') && (
+                            <div className="pt-2 border-t border-dashed flex justify-between items-center">
+                                <span className="text-xs text-muted-foreground font-medium">Siswa lulus atau keluar sekolah?</span>
+                                <Button size="sm" variant="outline" type="button" className="border-blue-500 text-blue-500 hover:bg-blue-50" onClick={() => setShowArchiveConfirm(true)}>
+                                    <Archive className="h-3.5 w-3.5 mr-1" />
+                                    Arsipkan Siswa
+                                </Button>
+                            </div>
+                        )
+                    )}
                 </div>
                 <DialogFooter className="grid grid-cols-2 gap-2">
                     <DialogClose asChild>
                         <Button variant="outline" type="button">Batal</Button>
                     </DialogClose>
-                    <Button type="submit" disabled={loading}>
+                    <Button type="submit" disabled={loading || showArchiveConfirm}>
                         {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                         Simpan Perubahan
                     </Button>
@@ -232,6 +301,124 @@ const DeleteStudentDialog = ({ studentId, studentName, onStudentDeleted, deleteS
 }
 
 
+const ArchiveStudentDialog = ({ studentId, studentName, onStudentArchived, archiveStudentAction }: { studentId: string; studentName: string; onStudentArchived: (studentId: string, updatedNisSuffix: string, updatedName: string) => void; archiveStudentAction: BoundArchiveStudentAction }) => {
+    const { toast } = useToast();
+    const [loading, setLoading] = useState(false);
+    const [open, setOpen] = useState(false);
+
+    const handleArchive = async () => {
+        setLoading(true);
+        const result = await archiveStudentAction(studentId);
+        setLoading(false);
+
+        if (result.success) {
+            const timestamp = Math.floor(Date.now() / 1000);
+            onStudentArchived(studentId, `_arc_${timestamp}`, `${studentName} (Diarsipkan)`);
+            toast({
+                title: 'Siswa Diarsipkan',
+                description: result.message,
+            });
+            setOpen(false);
+        } else {
+            toast({
+                title: 'Gagal Mengarsipkan Siswa',
+                description: result.message,
+                variant: 'destructive'
+            });
+        }
+    }
+
+    return (
+        <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+                <Button variant="outline" size="icon" title="Arsip Siswa" className='h-8 w-8 border-blue-500 text-blue-500 hover:bg-blue-50 hover:text-blue-600'>
+                    <Archive className="h-4 w-4" />
+                </Button>
+            </DialogTrigger>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Arsipkan Siswa?</DialogTitle>
+                    <DialogDescription className="space-y-2 text-sm text-muted-foreground pt-3">
+                        <p>Mengarsipkan <strong>{studentName}</strong> akan:</p>
+                        <ul className="list-disc pl-5 space-y-1">
+                            <li><strong>Membebaskan NIS asli siswa</strong> sehingga bisa digunakan kembali oleh siswa baru.</li>
+                            <li><strong>Menonaktifkan login siswa</strong> di panel siswa.</li>
+                            <li><strong>Menjaga seluruh riwayat transaksi keuangan</strong> agar laporan pembukuan sekolah tetap seimbang.</li>
+                        </ul>
+                    </DialogDescription>
+                </DialogHeader>
+                <DialogFooter className="mt-4">
+                    <DialogClose asChild><Button variant="ghost" disabled={loading}>Batal</Button></DialogClose>
+                    <Button className="bg-blue-600 hover:bg-blue-700 text-white" onClick={handleArchive} disabled={loading}>
+                        {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Ya, Arsipkan Siswa
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    )
+}
+
+const RestoreStudentDialog = ({ studentId, studentName, onStudentRestored, restoreStudentAction }: { studentId: string; studentName: string; onStudentRestored: (studentId: string, restoredNis: string, restoredName: string) => void; restoreStudentAction: BoundRestoreStudentAction }) => {
+    const { toast } = useToast();
+    const [loading, setLoading] = useState(false);
+    const [open, setOpen] = useState(false);
+
+    const handleRestore = async () => {
+        setLoading(true);
+        const result = await restoreStudentAction(studentId);
+        setLoading(false);
+
+        if (result.success) {
+            const restoredName = studentName.replace(' (Diarsipkan)', '');
+            onStudentRestored(studentId, '', restoredName);
+            toast({
+                title: 'Siswa Dipulihkan',
+                description: result.message,
+            });
+            setOpen(false);
+        } else {
+            toast({
+                title: 'Gagal Memulihkan Siswa',
+                description: result.message,
+                variant: 'destructive'
+            });
+        }
+    }
+
+    return (
+        <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+                <Button variant="outline" size="icon" title="Pulihkan Siswa" className='h-8 w-8 border-green-500 text-green-500 hover:bg-green-50 hover:text-green-600'>
+                    <RefreshCw className="h-4 w-4" />
+                </Button>
+            </DialogTrigger>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Pulihkan Siswa?</DialogTitle>
+                    <DialogDescription className="space-y-2 text-sm text-muted-foreground pt-3">
+                        <p>Memulihkan <strong>{studentName}</strong> akan:</p>
+                        <ul className="list-disc pl-5 space-y-1">
+                            <li>Mengembalikan siswa ke daftar siswa **aktif**.</li>
+                            <li>Mengembalikan NIS dan Nama asli mereka.</li>
+                            <li>Mereset PIN login mereka ke default **123456** agar mereka bisa login kembali.</li>
+                        </ul>
+                        <p className="text-yellow-600 font-semibold mt-2">Catatan: Pastikan NIS asli siswa tidak sedang digunakan oleh siswa aktif lain saat ini.</p>
+                    </DialogDescription>
+                </DialogHeader>
+                <DialogFooter className="mt-4">
+                    <DialogClose asChild><Button variant="ghost" disabled={loading}>Batal</Button></DialogClose>
+                    <Button className="bg-green-600 hover:bg-green-700 text-white" onClick={handleRestore} disabled={loading}>
+                        {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Ya, Pulihkan Siswa
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    )
+}
+
+
 export default function ProfilesClientPage({
     initialStudents,
     initialProfile,
@@ -240,6 +427,8 @@ export default function ProfilesClientPage({
     updateStudentAction,
     deleteStudentAction,
     importStudentsAction,
+    archiveStudentAction,
+    restoreStudentAction,
 }: ProfilesClientPageProps) {
   const [students, setStudents] = useState<Student[]>(initialStudents);
   const [profile, setProfile] = useState<Profile | null>(initialProfile);
@@ -248,6 +437,7 @@ export default function ProfilesClientPage({
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedClass, setSelectedClass] = useState('all');
   const [sortBy, setSortBy] = useState<'name' | 'nis'>('name');
+  const [statusFilter, setStatusFilter] = useState<'active' | 'archived'>('active');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const formRef = useRef<HTMLFormElement>(null);
@@ -263,6 +453,22 @@ export default function ProfilesClientPage({
       setAddPin('123456');
     }
   }, [addDialogOpen]);
+
+  const handleArchiveStudent = (studentId: string, updatedNisSuffix: string, updatedName: string) => {
+    setStudents(prev =>
+      prev.map(student =>
+        student.id === studentId ? { ...student, nis: `${student.nis.split('_arc_')[0]}${updatedNisSuffix}`, name: updatedName } : student
+      )
+    );
+  };
+
+  const handleRestoreStudent = (studentId: string, restoredNis: string, restoredName: string) => {
+    setStudents(prev =>
+      prev.map(student =>
+        student.id === studentId ? { ...student, nis: student.nis.split('_arc_')[0], name: restoredName } : student
+      )
+    );
+  };
 
   const studentQuota = profile?.plan === 'PRO' ? 40 : 5;
   const proStudentQuota = 40;
@@ -319,6 +525,11 @@ export default function ProfilesClientPage({
   const filteredStudents = useMemo(() => {
     return students
       .filter(student => {
+        const isArchived = student.nis.includes('_arc_');
+        if (statusFilter === 'active') return !isArchived;
+        return isArchived;
+      })
+      .filter(student => {
         if (selectedClass === 'all') return true;
         return student.class === selectedClass;
       })
@@ -337,7 +548,7 @@ export default function ProfilesClientPage({
             return a.nis.localeCompare(b.nis, undefined, { numeric: true });
         }
       });
-  }, [students, searchTerm, selectedClass, sortBy]);
+  }, [students, searchTerm, selectedClass, sortBy, statusFilter]);
 
 
   const handleDownloadTemplate = () => {
@@ -494,7 +705,23 @@ export default function ProfilesClientPage({
                 )}
             </div>
             
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="space-y-1.5">
+                    <Label className="text-[10px] font-bold uppercase text-muted-foreground tracking-widest">Status Siswa</Label>
+                    <Select value={statusFilter} onValueChange={(v: any) => setStatusFilter(v)}>
+                        <SelectTrigger className="h-10 bg-muted/50 border-none">
+                            <div className="flex items-center gap-2">
+                                <User className="h-3.5 w-3.5 text-muted-foreground" />
+                                <SelectValue />
+                            </div>
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="active">Siswa Aktif</SelectItem>
+                            <SelectItem value="archived">Siswa Diarsipkan</SelectItem>
+                        </SelectContent>
+                    </Select>
+                </div>
+
                 <div className="space-y-1.5">
                     <Label className="text-[10px] font-bold uppercase text-muted-foreground tracking-widest">Filter Kelas</Label>
                     <Select value={selectedClass} onValueChange={setSelectedClass}>
@@ -591,12 +818,37 @@ export default function ProfilesClientPage({
                                 </Link>
                             </Button>
                         </TableCell>
-                        <TableCell className="font-mono text-xs">{student.nis}</TableCell>
+                        <TableCell className="font-mono text-xs">
+                            {student.nis.includes('_arc_') ? student.nis.split('_arc_')[0] : student.nis}
+                        </TableCell>
                         <TableCell className="font-bold text-sm">{student.name}</TableCell>
                         <TableCell><span className="text-[10px] font-black uppercase px-2 py-0.5 bg-muted rounded-md">{student.class}</span></TableCell>
                         <TableCell>
                             <div className='flex items-center justify-end gap-2'>
-                                <EditStudentDialog student={student} onStudentUpdated={handleUpdateStudent} updateStudentAction={updateStudentAction} />
+                                {statusFilter === 'active' ? (
+                                    <>
+                                        <EditStudentDialog 
+                                            student={student} 
+                                            onStudentUpdated={handleUpdateStudent} 
+                                            updateStudentAction={updateStudentAction} 
+                                            archiveStudentAction={archiveStudentAction}
+                                            onStudentArchived={handleArchiveStudent}
+                                        />
+                                        <ArchiveStudentDialog 
+                                            studentId={student.id} 
+                                            studentName={student.name} 
+                                            onStudentArchived={handleArchiveStudent} 
+                                            archiveStudentAction={archiveStudentAction} 
+                                        />
+                                    </>
+                                ) : (
+                                    <RestoreStudentDialog 
+                                        studentId={student.id} 
+                                        studentName={student.name} 
+                                        onStudentRestored={handleRestoreStudent} 
+                                        restoreStudentAction={restoreStudentAction} 
+                                    />
+                                )}
                                 <DeleteStudentDialog studentId={student.id} studentName={student.name} onStudentDeleted={handleDeleteStudent} deleteStudentAction={deleteStudentAction} />
                             </div>
                         </TableCell>
