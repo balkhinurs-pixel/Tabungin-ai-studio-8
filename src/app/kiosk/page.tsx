@@ -166,6 +166,8 @@ export default function KioskPage() {
 
   // Keyboard wedge listener for Cashcow USB Scanner Device
   useEffect(() => {
+    if (kioskState !== 'SCANNING') return; // Only listen in SCANNING state
+
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       const targetTag = target?.tagName?.toUpperCase();
@@ -211,6 +213,132 @@ export default function KioskPage() {
       window.removeEventListener('keydown', handleGlobalKeyDown, true);
     };
   }, [kioskState, manualInputOpen]);
+
+  // Dedicated listener for PIN & Custom Amount external keyboard/numpad input
+  useEffect(() => {
+    if (kioskState === 'SCANNING') return;
+    if (isSettlementOpen || isSchoolCodeModalOpen) return;
+
+    const handleKioskKeyboardInput = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      const targetTag = target?.tagName?.toUpperCase();
+      
+      // Ignore if user is actively typing in a standard input (except if we want manual kiosk keys)
+      if (targetTag === 'INPUT' || targetTag === 'TEXTAREA') {
+        return;
+      }
+
+      const key = e.key;
+
+      if (kioskState === 'PIN_INPUT') {
+        if (/^[0-9]$/.test(key)) {
+          e.preventDefault();
+          if (pin.length < 6) {
+            setPin(prev => prev + key);
+          }
+        } else if (key === 'Backspace') {
+          e.preventDefault();
+          setPin(prev => prev.slice(0, -1));
+        } else if (key === 'Delete' || key === 'Escape') {
+          e.preventDefault();
+          setPin('');
+        } else if (key === 'Enter') {
+          e.preventDefault();
+          if (pin.length === 6) {
+            setKioskState('WITHDRAW_MENU');
+          }
+        }
+      }
+
+      else if (kioskState === 'CUSTOM_AMOUNT') {
+        if (/^[0-9]$/.test(key)) {
+          e.preventDefault();
+          setAmount(prev => {
+            const nextVal = parseInt(`${prev}${key}`);
+            if (isNaN(nextVal)) return prev;
+            if (nextVal > (student?.balance || 0)) return prev;
+            return nextVal;
+          });
+        } else if (key === 'Backspace') {
+          e.preventDefault();
+          setAmount(prev => {
+            const s = prev.toString();
+            return s.length <= 1 ? 0 : parseInt(s.slice(0, -1));
+          });
+        } else if (key === 'Delete' || key === 'Escape') {
+          e.preventDefault();
+          setAmount(0);
+        } else if (key === 'Enter') {
+          e.preventDefault();
+          if (amount > 0 && amount <= (student?.balance || 0)) {
+            setReason('Uang Saku / Jajan');
+            setIsCustomReason(false);
+            setKioskState('REASON_SELECTION');
+          }
+        }
+      }
+
+      else if (kioskState === 'MAIN_MENU') {
+        if (key === 'Escape') {
+          e.preventDefault();
+          handleReset();
+        } else if (key === 'Enter') {
+          e.preventDefault();
+          setKioskState('PIN_INPUT');
+        }
+      }
+
+      else if (kioskState === 'WITHDRAW_MENU') {
+        if (key === 'Escape') {
+          e.preventDefault();
+          setKioskState('PIN_INPUT');
+        } else if (/^[1-4]$/.test(key)) {
+          e.preventDefault();
+          const index = parseInt(key) - 1;
+          const selectedAmt = QUICK_AMOUNTS[index];
+          if (selectedAmt && selectedAmt <= (student?.balance || 0)) {
+            setAmount(selectedAmt);
+            setReason('Uang Saku / Jajan');
+            setIsCustomReason(false);
+            setKioskState('REASON_SELECTION');
+          }
+        } else if (key === 'Enter') {
+          e.preventDefault();
+          setKioskState('CUSTOM_AMOUNT');
+        }
+      }
+
+      else if (kioskState === 'REASON_SELECTION') {
+        if (key === 'Escape') {
+          e.preventDefault();
+          setKioskState('WITHDRAW_MENU');
+        } else if (/^[1-6]$/.test(key)) {
+          e.preventDefault();
+          const index = parseInt(key) - 1;
+          const preset = PRESET_REASONS[index];
+          if (preset) {
+            if (preset.label === 'Lainnya') {
+              setIsCustomReason(true);
+              setReason('');
+            } else {
+              setIsCustomReason(false);
+              setReason(preset.label);
+            }
+          }
+        } else if (key === 'Enter') {
+          e.preventDefault();
+          if (reason.trim()) {
+            handleWithdraw(amount, reason);
+          }
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKioskKeyboardInput, true);
+    return () => {
+      window.removeEventListener('keydown', handleKioskKeyboardInput, true);
+    };
+  }, [kioskState, pin, amount, student, reason, isCustomReason, isSettlementOpen, isSchoolCodeModalOpen]);
 
   // Reset Timer - kembali ke scan jika ditinggalkan
   useEffect(() => {
