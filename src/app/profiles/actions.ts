@@ -194,6 +194,185 @@ export async function deleteStudentAction(
 }
 
 
+export async function archiveStudentAction(
+  studentId: string
+): Promise<{success: boolean; message: string;}> {
+    if (!studentId) {
+        return { success: false, message: 'ID Siswa tidak ditemukan.' };
+    }
+
+    const supabase = createClient();
+    const supabaseAdmin = getSupabaseAdmin();
+
+    try {
+        // 1. Ambil data siswa saat ini
+        const { data: student, error: studentFetchErr } = await supabase
+            .from('students')
+            .select('nis, name, class, user_id')
+            .eq('id', studentId)
+            .single();
+
+        if (studentFetchErr || !student) {
+            return { success: false, message: `Gagal mengambil data siswa: ${studentFetchErr?.message || 'Data tidak ditemukan'}` };
+        }
+
+        // Cek jika sudah diarsipkan sebelumnya
+        if (student.nis.includes('_arc_')) {
+            return { success: false, message: 'Siswa ini sudah berada di dalam arsip.' };
+        }
+
+        // 2. Dapatkan profil guru/sekolah untuk menyusun domain email bayangan
+        const { data: profile } = await supabase
+            .from('profiles')
+            .select('school_code')
+            .eq('id', student.user_id)
+            .single();
+
+        if (!profile || !profile.school_code) {
+            return { success: false, message: 'Kode sekolah tidak ditemukan.' };
+        }
+
+        const timestamp = Math.floor(Date.now() / 1000);
+        const originalNis = student.nis;
+        const archivedNis = `${originalNis}_arc_${timestamp}`;
+        const archivedName = `${student.name} (Diarsipkan)`;
+        const archivedEmail = `${archivedNis}@${profile.school_code.toLowerCase()}.supabase.user`;
+        const randomPassword = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+
+        // 3. Update Auth User: ganti email bayangan dan ganti PIN secara acak agar siswa tidak bisa login lagi
+        const { error: authUpdateErr } = await supabaseAdmin.auth.admin.updateUserById(
+            studentId,
+            { 
+                email: archivedEmail,
+                password: randomPassword
+            }
+        );
+
+        if (authUpdateErr) {
+            return { success: false, message: `Gagal memperbarui data autentikasi arsip: ${authUpdateErr.message}` };
+        }
+
+        // 4. Update data profil di tabel students (mengganti NIS dan Nama)
+        const { error: studentUpdateErr } = await supabase
+            .from('students')
+            .update({
+                nis: archivedNis,
+                name: archivedName
+            })
+            .eq('id', studentId);
+
+        if (studentUpdateErr) {
+            return { success: false, message: `Gagal memperbarui profil siswa di database: ${studentUpdateErr.message}` };
+        }
+
+        revalidatePath('/profiles');
+        return {
+            success: true,
+            message: `Siswa ${student.name} berhasil diarsipkan. NIS ${originalNis} sekarang bebas dan dapat digunakan ulang.`
+        };
+    } catch (err: any) {
+        return { success: false, message: `Gagal mengarsipkan: ${err.message || err}` };
+    }
+}
+
+
+export async function restoreStudentAction(
+  studentId: string
+): Promise<{success: boolean; message: string;}> {
+    if (!studentId) {
+        return { success: false, message: 'ID Siswa tidak ditemukan.' };
+    }
+
+    const supabase = createClient();
+    const supabaseAdmin = getSupabaseAdmin();
+
+    try {
+        // 1. Ambil data siswa dari database
+        const { data: student, error: studentFetchErr } = await supabase
+            .from('students')
+            .select('nis, name, class, user_id')
+            .eq('id', studentId)
+            .single();
+
+        if (studentFetchErr || !student) {
+            return { success: false, message: `Gagal mengambil data siswa: ${studentFetchErr?.message || 'Data tidak ditemukan'}` };
+        }
+
+        // Pastikan siswa memang diarsipkan
+        if (!student.nis.includes('_arc_')) {
+            return { success: false, message: 'Siswa ini bukan siswa arsip.' };
+        }
+
+        // Ekstrak NIS asli (menghilangkan suffix _arc_1723...)
+        const originalNis = student.nis.split('_arc_')[0];
+        
+        // 2. Periksa apakah NIS asli sudah digunakan oleh siswa aktif lain
+        const { data: duplicateActive, error: dupError } = await supabase
+            .from('students')
+            .select('id, name')
+            .eq('user_id', student.user_id)
+            .eq('nis', originalNis)
+            .maybeSingle();
+
+        if (duplicateActive) {
+            return { 
+                success: false, 
+                message: `Gagal memulihkan. NIS asli (${originalNis}) sudah terdaftar pada siswa aktif lain bernama "${duplicateActive.name}".` 
+            };
+        }
+
+        // 3. Dapatkan kode sekolah
+        const { data: profile } = await supabase
+            .from('profiles')
+            .select('school_code')
+            .eq('id', student.user_id)
+            .single();
+
+        if (!profile || !profile.school_code) {
+            return { success: false, message: 'Kode sekolah tidak ditemukan.' };
+        }
+
+        const restoredName = student.name.replace(' (Diarsipkan)', '');
+        const restoredEmail = `${originalNis}@${profile.school_code.toLowerCase()}.supabase.user`;
+        const defaultPin = '123456'; // Default PIN saat dipulihkan
+
+        // 4. Update Auth User kembali ke email asli dan set default PIN
+        const { error: authUpdateErr } = await supabaseAdmin.auth.admin.updateUserById(
+            studentId,
+            { 
+                email: restoredEmail,
+                password: defaultPin
+            }
+        );
+
+        if (authUpdateErr) {
+            return { success: false, message: `Gagal memulihkan autentikasi siswa: ${authUpdateErr.message}` };
+        }
+
+        // 5. Update data siswa ke NIS dan Nama asli
+        const { error: studentUpdateErr } = await supabase
+            .from('students')
+            .update({
+                nis: originalNis,
+                name: restoredName
+            })
+            .eq('id', studentId);
+
+        if (studentUpdateErr) {
+            return { success: false, message: `Gagal mengembalikan profil siswa di database: ${studentUpdateErr.message}` };
+        }
+
+        revalidatePath('/profiles');
+        return {
+            success: true,
+            message: `Siswa ${restoredName} berhasil diaktifkan kembali dengan PIN default: 123456.`
+        };
+    } catch (err: any) {
+        return { success: false, message: `Gagal memulihkan siswa: ${err.message || err}` };
+    }
+}
+
+
 interface ImportResult {
   success: boolean;
   message: string;

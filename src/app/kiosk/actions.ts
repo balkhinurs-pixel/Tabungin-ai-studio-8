@@ -10,6 +10,10 @@ import { triggerSingleStudentLowBalanceWA } from '../settings/fonnte-actions';
 export async function getStudentKioskData(nis: string, schoolCode?: string) {
   const supabaseAdmin = getSupabaseAdmin();
   
+  if (nis.includes('_arc_')) {
+    return { success: false, message: 'Akun siswa ini telah dinonaktifkan (diarsipkan).' };
+  }
+  
   try {
     let query = supabaseAdmin
       .from('students')
@@ -75,6 +79,11 @@ export async function processKioskWithdrawal(params: {
     description?: string;
 }) {
     const { studentId, nis, schoolCode, pin, amount, description } = params;
+    
+    if (nis.includes('_arc_')) {
+        return { success: false, message: 'Akun siswa ini telah dinonaktifkan (diarsipkan).' };
+    }
+    
     const supabaseAdmin = getSupabaseAdmin();
     
     try {
