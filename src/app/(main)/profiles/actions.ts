@@ -32,11 +32,12 @@ export async function addStudentAction(
     return { success: false, message: 'Kode sekolah Anda belum diatur. Mohon atur di halaman Pengaturan.' };
   }
 
-  // 2. Check student quota
+  // 2. Check student quota (hanya menghitung siswa yang aktif, tidak diarsipkan)
   const { count: studentCount, error: countError } = await supabase
     .from('students')
     .select('*', { count: 'exact', head: true })
-    .eq('user_id', user.id);
+    .eq('user_id', user.id)
+    .not('nis', 'like', '%_arc_%');
 
   if (countError) {
     return { success: false, message: `Gagal memeriksa kuota siswa: ${countError.message}` };
@@ -424,7 +425,11 @@ export async function importStudentsAction(csvContent: string): Promise<ImportRe
     return { success: false, message: 'Kode sekolah Anda belum diatur.', importedCount: 0, newStudents: [] };
   }
   
-  const { count: currentStudentCount } = await supabase.from('students').select('*', { count: 'exact', head: true }).eq('user_id', user.id);
+  const { count: currentStudentCount } = await supabase
+    .from('students')
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', user.id)
+    .not('nis', 'like', '%_arc_%');
   const studentQuota = profile.custom_quota || (profile.plan === 'PRO' ? 40 : 5);
 
   const lines = csvContent.trim().split('\n');

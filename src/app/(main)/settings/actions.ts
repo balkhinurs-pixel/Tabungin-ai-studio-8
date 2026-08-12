@@ -188,11 +188,13 @@ export async function processBatchAdminFeeAction(monthName: string) {
     }
 
     // AMBIL SISWA MENGGUNAKAN ADMIN CLIENT UNTUK BYPASS RLS TAPI TETAP FILTER ID GURU
-    // Kita gunakan hak akses admin untuk memastikan seluruh daftar siswa terbaca
+    // Kita gunakan hak akses admin untuk memastikan seluruh daftar siswa terbaca.
+    // Hanya memproses biaya admin untuk siswa yang AKTIF (tidak diarsipkan).
     const { data: students, error: studentError } = await supabaseAdmin
         .from('students')
         .select('id, name')
-        .eq('user_id', user.id);
+        .eq('user_id', user.id)
+        .not('nis', 'like', '%_arc_%');
 
     if (studentError) {
         return { success: false, message: 'Gagal mengambil data siswa: ' + studentError.message };
