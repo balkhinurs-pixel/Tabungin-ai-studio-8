@@ -15,7 +15,7 @@ import { AppLogo } from '@/components/AppLogo';
 import { NAV_ITEMS } from '@/lib/constants';
 import { Separator } from '@/components/ui/separator';
 import { Button } from '../ui/button';
-import { LogOut, User } from 'lucide-react';
+import { LogOut, User, ShoppingBag, MessageSquare, Settings, FileText, QrCode, ShieldCheck } from 'lucide-react';
 import { createClient } from '@/lib/supabase';
 import { useState, useEffect } from 'react';
 import type { AuthUser } from '@supabase/supabase-js';
@@ -41,6 +41,14 @@ export default function AppSidebar() {
     router.refresh(); // Ensure the page reloads to reflect logged out state
   };
 
+  const EXTRA_NAV_ITEMS = [
+    { href: '/jastip', title: 'Jastip & Toko', icon: ShoppingBag },
+    { href: '/whatsapp', title: 'WhatsApp Gateway', icon: MessageSquare },
+    { href: '/reports', title: 'Laporan', icon: FileText },
+    { href: '/print-cards', title: 'Cetak Kartu', icon: QrCode },
+    { href: '/settings', title: 'Pengaturan', icon: Settings },
+  ];
+
   return (
     <>
       <SidebarHeader>
@@ -64,6 +72,22 @@ export default function AppSidebar() {
               </SidebarMenuItem>
             );
           })}
+
+          <Separator className="my-2" />
+
+          {EXTRA_NAV_ITEMS.map((item) => (
+            <SidebarMenuItem key={item.href}>
+              <Link href={item.href}>
+                <SidebarMenuButton
+                  isActive={pathname.startsWith(item.href)}
+                  tooltip={item.title}
+                >
+                  <item.icon />
+                  <span>{item.title}</span>
+                </SidebarMenuButton>
+              </Link>
+            </SidebarMenuItem>
+          ))}
         </SidebarMenu>
       </SidebarContent>
       <SidebarFooter className="p-2">

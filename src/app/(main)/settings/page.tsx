@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Save, DatabaseZap, Loader2, Info, ShoppingBag } from 'lucide-react';
+import { Save, DatabaseZap, Loader2, Info } from 'lucide-react';
 import { createClient } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
 import type { Profile } from '@/types';
@@ -83,13 +83,17 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold tracking-tight text-primary">Pengaturan Aplikasi</h2>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight text-primary">Pengaturan Aplikasi</h2>
+          <p className="text-xs font-semibold text-muted-foreground">Kelola informasi sekolah dan pencadangan basis data</p>
+        </div>
+      </div>
 
       <Tabs defaultValue="school" className="w-full">
-        <TabsList className="grid w-full grid-cols-3 mb-6 rounded-2xl bg-muted/50 p-1.5 h-14">
+        <TabsList className="grid w-full grid-cols-2 mb-6 rounded-2xl bg-muted/50 p-1.5 h-14">
           <TabsTrigger value="school" className="rounded-xl font-bold text-xs uppercase tracking-wider">Identitas Sekolah</TabsTrigger>
-          <TabsTrigger value="fonnte" className="rounded-xl font-bold text-xs uppercase tracking-wider">WA Saldo Minimal</TabsTrigger>
-          <TabsTrigger value="data" className="rounded-xl font-bold text-xs uppercase tracking-wider">Backup Data</TabsTrigger>
+          <TabsTrigger value="data" className="rounded-xl font-bold text-xs uppercase tracking-wider">Backup & Restore Data</TabsTrigger>
         </TabsList>
 
         <TabsContent value="school" className="space-y-4">
@@ -116,20 +120,10 @@ export default function SettingsPage() {
                     <p className="text-[10px] text-muted-foreground italic">Gunakan huruf kecil dan angka saja tanpa spasi.</p>
                     </div>
                     
-                    <Alert className="bg-pink-50 border-pink-100 text-pink-900">
-                        <ShoppingBag className="h-4 w-4 text-pink-600" />
-                        <AlertDescription className="text-xs flex items-center justify-between">
-                            <span>Manajemen Menu & Pesanan <strong>Jastip Santri</strong> tersedia di menu Jastip.</span>
-                            <Button size="sm" variant="link" className="text-pink-700 font-bold p-0 h-auto" asChild>
-                                <a href="/jastip">Buka Jastip &rarr;</a>
-                            </Button>
-                        </AlertDescription>
-                    </Alert>
-
-                    <Alert className="bg-blue-50 border-blue-100 text-blue-800">
-                        <Info className="h-4 w-4 text-blue-700" />
+                    <Alert className="bg-emerald-50 border-emerald-100 text-emerald-800">
+                        <Info className="h-4 w-4 text-emerald-700" />
                         <AlertDescription className="text-xs">
-                            Manajemen Kantin dan Settlement kini tersedia di menu <strong>Keuangan</strong> di sidebar atau dashboard utama.
+                            Pengaturan <strong>WhatsApp Gateway & Notifikasi Fonnte</strong> kini dipisahkan ke menu tersendiri di beranda atau dapat diakses via menu <strong>Pengaturan WA</strong>.
                         </AlertDescription>
                     </Alert>
 
@@ -141,10 +135,6 @@ export default function SettingsPage() {
                 )}
                 </CardContent>
             </Card>
-        </TabsContent>
-
-        <TabsContent value="fonnte" className="space-y-4">
-            <FonnteSettings />
         </TabsContent>
 
         <TabsContent value="data" className="space-y-4">

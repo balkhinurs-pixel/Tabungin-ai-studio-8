@@ -12,6 +12,7 @@ import {
   Settings, 
   MonitorSmartphone,
   ShoppingBag,
+  MessageSquare,
   LucideIcon
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -31,11 +32,12 @@ const ALL_MENUS: MenuItem[] = [
   { icon: History, label: 'Jurnal', description: 'Riwayat transaksi harian', href: '/today-transactions', color: 'text-purple-600', bg: 'bg-purple-50' },
   { icon: Banknote, label: 'Keuangan', description: 'Manajemen omzet & kantin', href: '/settlement', color: 'text-emerald-600', bg: 'bg-emerald-50' },
   { icon: ShoppingBag, label: 'Jastip', description: 'Katalog & pesanan santri', href: '/jastip', color: 'text-pink-600', bg: 'bg-pink-50' },
+  { icon: MessageSquare, label: 'Setting WA', description: 'WhatsApp gateway & notifikasi', href: '/whatsapp', color: 'text-emerald-600', bg: 'bg-emerald-50' },
   { icon: FileText, label: 'Laporan', description: 'Rekap tabungan & ekspor PDF', href: '/reports', color: 'text-blue-600', bg: 'bg-blue-50' },
   { icon: QrCode, label: 'Cetak', description: 'Desain & cetak kartu QR', href: '/print-cards', color: 'text-rose-600', bg: 'bg-rose-50' },
   { icon: MonitorSmartphone, label: 'ATM', description: 'Tampilan Kiosk ATM siswa', href: '/kiosk', color: 'text-indigo-600', bg: 'bg-indigo-50' },
   { icon: ShieldCheck, label: 'Aktivasi', description: 'Upgrade akun ke versi PRO', href: '/activation', color: 'text-amber-600', bg: 'bg-amber-50' },
-  { icon: Settings, label: 'Opsi', description: 'Identitas sekolah & backup', href: '/settings', color: 'text-gray-600', bg: 'bg-gray-100' },
+  { icon: Settings, label: 'Pengaturan', description: 'Identitas sekolah & backup', href: '/settings', color: 'text-gray-600', bg: 'bg-gray-100' },
 ];
 
 export default function QuickMenu() {
