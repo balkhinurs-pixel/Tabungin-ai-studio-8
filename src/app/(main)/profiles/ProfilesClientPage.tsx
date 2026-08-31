@@ -23,7 +23,7 @@ import {
   } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { PlusCircle, Download, Upload, Filter, Search, ShieldCheck, User, KeyRound, Pencil, Trash2, Save, Loader2, Info, ArrowRight, RotateCcw, SortAsc, X, Archive, RefreshCw } from 'lucide-react';
+import { PlusCircle, Download, Upload, Filter, Search, ShieldCheck, User, KeyRound, Pencil, Trash2, Save, Loader2, Info, ArrowRight, RotateCcw, SortAsc, X, Archive, RefreshCw, Check, Copy, MessageSquare } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
@@ -38,7 +38,7 @@ type BoundDeleteStudentAction = (studentId: string) => Promise<{success: boolean
 type BoundImportStudentsAction = (csvContent: string) => Promise<{success: boolean; message: string; importedCount: number; newStudents: Student[]}>;
 type BoundArchiveStudentAction = (studentId: string) => Promise<{success: boolean; message: string;}>;
 type BoundRestoreStudentAction = (studentId: string) => Promise<{success: boolean; message: string;}>;
-
+type BoundResetStudentPinAction = (studentId: string, customPin?: string) => Promise<{success: boolean; message: string; pin?: string;}>;
 
 interface ProfilesClientPageProps {
     initialStudents: Student[];
@@ -50,6 +50,7 @@ interface ProfilesClientPageProps {
     importStudentsAction: BoundImportStudentsAction;
     archiveStudentAction: BoundArchiveStudentAction;
     restoreStudentAction: BoundRestoreStudentAction;
+    resetStudentPinAction: BoundResetStudentPinAction;
 }
 
 const EditStudentDialog = ({ 
@@ -248,6 +249,208 @@ const EditStudentDialog = ({
     )
 }
 
+const ResetStudentPinDialog = ({
+    student,
+    resetStudentPinAction
+}: {
+    student: Student;
+    resetStudentPinAction: BoundResetStudentPinAction;
+}) => {
+    const { toast } = useToast();
+    const [open, setOpen] = useState(false);
+    const [pin, setPin] = useState('123456');
+    const [loading, setLoading] = useState(false);
+    const [newPinResult, setNewPinResult] = useState<string | null>(null);
+    const [copied, setCopied] = useState(false);
+
+    const handlePinChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const value = e.target.value.replace(/\D/g, '').slice(0, 6);
+        setPin(value);
+    };
+
+    const handleReset = async () => {
+        if (!pin || pin.length !== 6 || !/^\d{6}$/.test(pin)) {
+            toast({
+                title: 'PIN Tidak Valid',
+                description: 'PIN harus terdiri dari tepat 6 digit angka.',
+                variant: 'destructive'
+            });
+            return;
+        }
+
+        setLoading(true);
+        const result = await resetStudentPinAction(student.id, pin);
+        setLoading(false);
+
+        if (result.success) {
+            setNewPinResult(result.pin || pin);
+            toast({
+                title: 'PIN Berhasil Direset',
+                description: result.message,
+            });
+        } else {
+            toast({
+                title: 'Gagal Mereset PIN',
+                description: result.message,
+                variant: 'destructive',
+            });
+        }
+    };
+
+    const handleCopyPin = () => {
+        if (!newPinResult) return;
+        navigator.clipboard.writeText(newPinResult);
+        setCopied(true);
+        toast({ title: 'Tersalin', description: `PIN ${newPinResult} disalin ke clipboard.` });
+        setTimeout(() => setCopied(false), 2500);
+    };
+
+    const handleSendWA = () => {
+        if (!student.whatsapp_number || !newPinResult) return;
+        const cleanPhone = student.whatsapp_number.replace(/\D/g, '');
+        const message = `*🔐 INFORMASI RESET PIN TABUNGAN SISWA*
+--------------------------------------------
+Yth. Orang Tua / Wali dari:
+Nama: *${student.name}*
+NIS: *${student.nis.includes('_arc_') ? student.nis.split('_arc_')[0] : student.nis}*
+Kelas: *${student.class}*
+
+PIN login dan transaksi tabungan siswa telah berhasil direset menjadi:
+🔑 *PIN Baru: ${newPinResult}*
+
+Silakan simpan PIN ini dengan baik untuk login ke aplikasi siswa atau bertransaksi di kantin sekolah.
+--------------------------------------------
+_Pesan otomatis dari Sistem Tabungan Digital Sekolah._`;
+
+        window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`, '_blank');
+    };
+
+    const handleOpenChange = (isOpen: boolean) => {
+        setOpen(isOpen);
+        if (isOpen) {
+            setPin('123456');
+            setNewPinResult(null);
+            setCopied(false);
+        }
+    };
+
+    return (
+        <Dialog open={open} onOpenChange={handleOpenChange}>
+            <DialogTrigger asChild>
+                <Button 
+                    variant="outline" 
+                    size="icon" 
+                    className="h-8 w-8 border-purple-400 text-purple-600 hover:bg-purple-50 hover:text-purple-700" 
+                    title="Reset PIN Siswa"
+                >
+                    <KeyRound className="h-4 w-4" />
+                </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[425px]">
+                <DialogHeader>
+                    <div className="flex items-center gap-2 text-purple-600 mb-1">
+                        <KeyRound className="h-5 w-5" />
+                        <DialogTitle>Reset PIN Siswa</DialogTitle>
+                    </div>
+                    <DialogDescription>
+                        Reset PIN login dan transaksi untuk <strong>{student.name}</strong> (NIS: {student.nis.includes('_arc_') ? student.nis.split('_arc_')[0] : student.nis}).
+                    </DialogDescription>
+                </DialogHeader>
+
+                {newPinResult ? (
+                    <div className="space-y-4 py-3">
+                        <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-center space-y-2">
+                            <span className="text-xs font-bold uppercase tracking-wider text-emerald-800">PIN Baru Siswa</span>
+                            <div className="text-3xl font-black font-mono tracking-widest text-emerald-950">
+                                {newPinResult}
+                            </div>
+                            <p className="text-xs text-emerald-700">
+                                PIN telah aktif dan siap digunakan untuk login siswa & transaksi kantin/kiosk.
+                            </p>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <Button 
+                                variant="outline" 
+                                onClick={handleCopyPin}
+                                className="w-full text-xs font-semibold"
+                            >
+                                {copied ? <Check className="mr-1.5 h-3.5 w-3.5 text-emerald-600" /> : <Copy className="mr-1.5 h-3.5 w-3.5" />}
+                                {copied ? 'Tersalin!' : 'Salin PIN'}
+                            </Button>
+                            {student.whatsapp_number && (
+                                <Button 
+                                    onClick={handleSendWA}
+                                    className="w-full text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white"
+                                >
+                                    <MessageSquare className="mr-1.5 h-3.5 w-3.5" />
+                                    Kirim ke WA
+                                </Button>
+                            )}
+                        </div>
+                    </div>
+                ) : (
+                    <div className="space-y-4 py-3">
+                        <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                                <Label htmlFor="reset-pin-val" className="text-xs font-bold text-foreground">
+                                    PIN Baru (6 Digit Angka)
+                                </Label>
+                                <Button
+                                    type="button"
+                                    variant="link"
+                                    className="h-auto p-0 text-[11px] font-bold text-purple-700 hover:text-purple-800"
+                                    onClick={() => setPin('123456')}
+                                >
+                                    <RotateCcw className="mr-1 h-3 w-3" /> Gunakan 123456
+                                </Button>
+                            </div>
+                            <Input
+                                id="reset-pin-val"
+                                value={pin}
+                                onChange={handlePinChange}
+                                placeholder="123456"
+                                maxLength={6}
+                                inputMode="numeric"
+                                className="font-mono text-base tracking-widest text-center h-12"
+                            />
+                        </div>
+
+                        <Alert variant="default" className="text-purple-900 bg-purple-50 border-purple-200">
+                            <Info className="h-4 w-4 !text-purple-800" />
+                            <AlertDescription className="text-xs">
+                                PIN default adalah <strong>123456</strong>. Siswa juga dapat mengubah PIN mereka mandiri di dasbor siswa.
+                            </AlertDescription>
+                        </Alert>
+                    </div>
+                )}
+
+                <DialogFooter>
+                    {newPinResult ? (
+                        <DialogClose asChild>
+                            <Button className="w-full">Selesai</Button>
+                        </DialogClose>
+                    ) : (
+                        <div className="flex w-full gap-2 justify-end">
+                            <DialogClose asChild>
+                                <Button variant="ghost" disabled={loading}>Batal</Button>
+                            </DialogClose>
+                            <Button 
+                                onClick={handleReset} 
+                                disabled={loading || pin.length !== 6}
+                                className="bg-purple-600 hover:bg-purple-700 text-white"
+                            >
+                                {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                Reset PIN
+                            </Button>
+                        </div>
+                    )}
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
+};
+
 const DeleteStudentDialog = ({ studentId, studentName, onStudentDeleted, deleteStudentAction }: { studentId: string; studentName: string; onStudentDeleted: (studentId: string) => void; deleteStudentAction: BoundDeleteStudentAction }) => {
     const { toast } = useToast();
     const [loading, setLoading] = useState(false);
@@ -429,6 +632,7 @@ export default function ProfilesClientPage({
     importStudentsAction,
     archiveStudentAction,
     restoreStudentAction,
+    resetStudentPinAction,
 }: ProfilesClientPageProps) {
   const [students, setStudents] = useState<Student[]>(initialStudents);
   const [profile, setProfile] = useState<Profile | null>(initialProfile);
@@ -827,11 +1031,15 @@ export default function ProfilesClientPage({
                             <div className='flex items-center justify-end gap-2'>
                                 {statusFilter === 'active' ? (
                                     <>
+                                        <ResetStudentPinDialog
+                                            student={student}
+                                            resetStudentPinAction={resetStudentPinAction}
+                                        />
                                         <EditStudentDialog 
                                             student={student} 
                                             onStudentUpdated={handleUpdateStudent} 
                                             updateStudentAction={updateStudentAction} 
-                                            archiveStudentAction={archiveStudentAction}
+                                            archiveStudentAction={archiveStudentAction} 
                                             onStudentArchived={handleArchiveStudent}
                                         />
                                         <ArchiveStudentDialog 

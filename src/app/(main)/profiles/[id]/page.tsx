@@ -7,6 +7,7 @@ import type { Student } from '@/types';
 import { createClient } from '@/lib/utils/supabase/server';
 import PrintReportButton from './_components/PrintReportButton';
 import SendWAButton from './_components/SendWAButton';
+import ResetPinButton from './_components/ResetPinButton';
 import TransactionList from './_components/TransactionList';
 import { cn } from '@/lib/utils';
 
@@ -169,12 +170,13 @@ export default async function StudentProfilePage({ params }: StudentProfilePageP
         </div>
         
         <div className="flex items-center gap-2 px-1 pt-4">
-            <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em]">Laporan & Berbagi</p>
+            <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em]">Laporan & Keamanan Akun</p>
             <div className="h-px flex-1 bg-gray-100" />
         </div>
         <div className="grid grid-cols-1 gap-3">
             <PrintReportButton student={student} />
             <SendWAButton student={student} income={income} expense={expense} balance={balance} />
+            <ResetPinButton student={student} />
         </div>
       </div>
 

@@ -117,6 +117,97 @@ export async function addStudentAction(
 }
 
 
+export async function resetStudentPinAction(
+  studentId: string,
+  customPin?: string
+): Promise<{ success: boolean; message: string; pin?: string }> {
+  if (!studentId) {
+    return { success: false, message: 'ID Siswa tidak valid.' };
+  }
+
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return { success: false, message: 'Anda harus masuk untuk mereset PIN siswa.' };
+  }
+
+  // 1. Ambil data siswa
+  const { data: student, error: studentError } = await supabase
+    .from('students')
+    .select('id, nis, name, class, user_id, whatsapp_number')
+    .eq('id', studentId)
+    .single();
+
+  if (studentError || !student) {
+    return { success: false, message: 'Data siswa tidak ditemukan.' };
+  }
+
+  // 2. Ambil profil guru/admin untuk mendapatkan school_code
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('school_code')
+    .eq('id', student.user_id)
+    .single();
+
+  if (!profile || !profile.school_code) {
+    return { success: false, message: 'Kode sekolah tidak ditemukan.' };
+  }
+
+  // 3. Tentukan PIN yang akan digunakan (default 123456 jika tidak diisi)
+  const pinToSet = customPin && customPin.trim().length > 0 ? customPin.trim() : '123456';
+  
+  if (pinToSet.length !== 6 || !/^\d{6}$/.test(pinToSet)) {
+    return { success: false, message: 'PIN harus terdiri dari tepat 6 digit angka.' };
+  }
+
+  const cleanNis = student.nis.includes('_arc_') ? student.nis.split('_arc_')[0] : student.nis;
+  const shadowEmail = `${cleanNis}@${profile.school_code.toLowerCase().trim()}.supabase.user`;
+  const supabaseAdmin = getSupabaseAdmin();
+
+  try {
+    // 4. Coba perbarui password dan email auth user yang ada
+    const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
+      studentId,
+      {
+        password: pinToSet,
+        email: shadowEmail,
+        email_confirm: true
+      }
+    );
+
+    // 5. Jika auth user belum ada (misal data lama), buatkan auth user baru
+    if (updateError) {
+      if (updateError.message?.toLowerCase().includes('not found') || updateError.status === 404) {
+        const { error: createError } = await supabaseAdmin.auth.admin.createUser({
+          id: studentId,
+          email: shadowEmail,
+          password: pinToSet,
+          email_confirm: true
+        });
+
+        if (createError) {
+          return { success: false, message: `Gagal membuat akun autentikasi siswa: ${createError.message}` };
+        }
+      } else {
+        return { success: false, message: `Gagal mereset PIN: ${updateError.message}` };
+      }
+    }
+
+    revalidatePath('/profiles');
+    revalidatePath(`/profiles/${studentId}`);
+    revalidatePath('/home');
+
+    return {
+      success: true,
+      message: `PIN untuk siswa ${student.name} berhasil direset ke: ${pinToSet}`,
+      pin: pinToSet
+    };
+  } catch (err: any) {
+    console.error('Error resetting student PIN:', err);
+    return { success: false, message: `Terjadi kesalahan saat mereset PIN: ${err.message || err}` };
+  }
+}
+
 export async function updateStudentAction(
   formData: FormData
 ): Promise<ActionResult> {
@@ -147,21 +238,53 @@ export async function updateStudentAction(
         return { success: false, message: errorMessage };
     }
 
-    // 2. If a new PIN is provided, update the auth user
-    if (pin && pin.trim().length > 0) {
-        const supabaseAdmin = getSupabaseAdmin();
-        const { error: updateUserError } = await supabaseAdmin.auth.admin.updateUserById(
-            id, { password: pin }
-        );
+    // 2. Dapatkan profil sekolah untuk sinkronisasi shadow email & PIN di Auth
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+        const { data: profile } = await supabase
+            .from('profiles')
+            .select('school_code')
+            .eq('id', user.id)
+            .single();
 
-        if (updateUserError) {
-            return { success: false, message: `Profil siswa diperbarui, tetapi gagal mereset PIN: ${updateUserError.message}` };
+        if (profile?.school_code) {
+            const shadowEmail = `${nis}@${profile.school_code.toLowerCase().trim()}.supabase.user`;
+            const supabaseAdmin = getSupabaseAdmin();
+            
+            const authUpdatePayload: { email: string; email_confirm: boolean; password?: string } = {
+                email: shadowEmail,
+                email_confirm: true,
+            };
+
+            if (pin && pin.trim().length > 0) {
+                authUpdatePayload.password = pin.trim();
+            }
+
+            const { error: updateUserError } = await supabaseAdmin.auth.admin.updateUserById(
+                id,
+                authUpdatePayload
+            );
+
+            // Jika user auth belum ada, buatkan otomatis
+            if (updateUserError) {
+                if (updateUserError.message?.toLowerCase().includes('not found')) {
+                    await supabaseAdmin.auth.admin.createUser({
+                        id: id,
+                        email: shadowEmail,
+                        password: pin && pin.trim().length > 0 ? pin.trim() : '123456',
+                        email_confirm: true
+                    });
+                } else if (pin && pin.trim().length > 0) {
+                    return { success: false, message: `Profil siswa diperbarui, tetapi gagal mereset PIN: ${updateUserError.message}` };
+                }
+            }
         }
     }
 
     // 3. Success
     revalidatePath('/profiles');
     revalidatePath(`/profiles/${id}`);
+    revalidatePath('/home');
     return {
         success: true,
         message: `Data siswa ${name} berhasil diperbarui.`,

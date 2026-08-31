@@ -1,6 +1,6 @@
 
 import type { Student, Profile } from '@/types';
-import { addStudentAction, updateStudentAction, deleteStudentAction, importStudentsAction, archiveStudentAction, restoreStudentAction } from './actions';
+import { addStudentAction, updateStudentAction, deleteStudentAction, importStudentsAction, archiveStudentAction, restoreStudentAction, resetStudentPinAction } from './actions';
 import ProfilesClientPage from './ProfilesClientPage';
 import type { AuthUser } from '@supabase/supabase-js';
 import { createClient } from '@/lib/utils/supabase/server';
@@ -39,6 +39,7 @@ export default async function ProfilesPage() {
             importStudentsAction={importStudentsAction}
             archiveStudentAction={archiveStudentAction}
             restoreStudentAction={restoreStudentAction}
+            resetStudentPinAction={resetStudentPinAction}
         />
     );
 }

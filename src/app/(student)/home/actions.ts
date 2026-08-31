@@ -2,26 +2,39 @@
 'use server';
 
 import { createClient } from '@/lib/utils/supabase/server';
+import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { revalidatePath } from 'next/cache';
 
 export async function changeStudentPinAction(newPin: string) {
   const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
 
-  if (!newPin || newPin.length < 6) {
-    return { success: false, message: 'PIN harus minimal 6 digit.' };
+  if (!user) {
+    return { success: false, message: 'Sesi login telah berakhir. Silakan login kembali.' };
   }
 
-  const { error } = await supabase.auth.updateUser({
-    password: newPin
-  });
-
-  if (error) {
-    console.error('Error changing student PIN:', error.message);
-    return { success: false, message: `Gagal mengubah PIN: ${error.message}` };
+  const cleanPin = newPin ? newPin.trim() : '';
+  if (!cleanPin || cleanPin.length !== 6 || !/^\d{6}$/.test(cleanPin)) {
+    return { success: false, message: 'PIN harus terdiri dari tepat 6 digit angka.' };
   }
 
-  revalidatePath('/home');
-  return { success: true, message: 'PIN Anda berhasil diperbarui.' };
+  try {
+    const supabaseAdmin = getSupabaseAdmin();
+    const { error } = await supabaseAdmin.auth.admin.updateUserById(user.id, {
+      password: cleanPin
+    });
+
+    if (error) {
+      console.error('Error changing student PIN:', error.message);
+      return { success: false, message: `Gagal mengubah PIN: ${error.message}` };
+    }
+
+    revalidatePath('/home');
+    return { success: true, message: 'PIN Anda berhasil diperbarui.' };
+  } catch (err: any) {
+    console.error('Unexpected error changing student PIN:', err);
+    return { success: false, message: `Terjadi kesalahan: ${err.message || err}` };
+  }
 }
 
 export async function updateDailyLimitAction(limit: number | null) {

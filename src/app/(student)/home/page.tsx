@@ -153,20 +153,22 @@ export default function StudentDashboardPage() {
 
     const handleSaveChanges = async () => {
         setSaving(true);
+        let pinChanged = false;
         if (newPin) {
-            if (newPin.length < 6) {
-                toast({ title: "PIN Terlalu Pendek", variant: "destructive" });
+            if (newPin.length !== 6 || !/^\d{6}$/.test(newPin)) {
+                toast({ title: "Format PIN Tidak Sesuai", description: "PIN harus terdiri dari 6 digit angka.", variant: "destructive" });
                 setSaving(false); return;
             }
             if (newPin !== confirmPin) {
-                toast({ title: "PIN Tidak Cocok", variant: "destructive" });
+                toast({ title: "PIN Tidak Cocok", description: "Konfirmasi PIN tidak sesuai dengan PIN baru.", variant: "destructive" });
                 setSaving(false); return;
             }
             const pinRes = await changeStudentPinAction(newPin);
             if (!pinRes.success) {
-                toast({ title: "Gagal Ganti PIN", variant: "destructive" });
+                toast({ title: "Gagal Ganti PIN", description: pinRes.message, variant: "destructive" });
                 setSaving(false); return;
             }
+            pinChanged = true;
         }
 
         const limitVal = dailyLimit ? parseInt(dailyLimit) : null;
@@ -174,10 +176,15 @@ export default function StudentDashboardPage() {
         setSaving(false);
 
         if (limitRes.success) {
-            toast({ title: "Berhasil", description: "Pengaturan disimpan." });
+            toast({ 
+                title: "Berhasil Disimpan", 
+                description: pinChanged ? "PIN dan pengaturan berhasil diperbarui." : "Pengaturan berhasil disimpan." 
+            });
             setDialogOpen(false);
             setNewPin(''); setConfirmPin('');
             if (student) setStudent({ ...student, daily_limit: limitVal });
+        } else {
+            toast({ title: "Gagal Menyimpan Limit", description: limitRes.message, variant: "destructive" });
         }
     };
 
