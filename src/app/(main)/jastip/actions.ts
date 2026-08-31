@@ -150,13 +150,32 @@ export async function getDefaultJastipConfigAction(): Promise<{ default_jastip_w
 
     if (!user) return { default_jastip_whatsapp: '' };
 
-    const { data } = await supabaseAdmin
-      .from('profiles')
-      .select('default_jastip_whatsapp')
-      .eq('id', user.id)
-      .maybeSingle();
+    // 1. Check user_metadata from user session
+    let waNumber = (user.user_metadata?.default_jastip_whatsapp as string) || '';
 
-    return { default_jastip_whatsapp: data?.default_jastip_whatsapp || '' };
+    // 2. If not found in session, check via supabaseAdmin auth
+    if (!waNumber) {
+      const { data: adminUserData } = await supabaseAdmin.auth.admin.getUserById(user.id);
+      waNumber = (adminUserData?.user?.user_metadata?.default_jastip_whatsapp as string) || '';
+    }
+
+    // 3. Fallback: try reading from profiles table if column exists
+    if (!waNumber) {
+      try {
+        const { data } = await supabaseAdmin
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
+          .maybeSingle();
+        if (data && (data as any).default_jastip_whatsapp) {
+          waNumber = (data as any).default_jastip_whatsapp;
+        }
+      } catch (err) {
+        // Table column might not exist, silently ignore
+      }
+    }
+
+    return { default_jastip_whatsapp: waNumber };
   } catch (err) {
     console.error('[GET_DEFAULT_JASTIP_CONFIG_ERROR]', err);
     return { default_jastip_whatsapp: '' };
@@ -169,21 +188,44 @@ export async function updateDefaultJastipWhatsAppAction(whatsappNumber: string):
     const supabaseAdmin = getSupabaseAdmin();
     const { data: { user } } = await supabase.auth.getUser();
 
-    if (!user) return { success: false, message: 'Sesi berakhir.' };
+    if (!user) return { success: false, message: 'Sesi login telah berakhir.' };
 
     const cleanPhone = whatsappNumber.replace(/\D/g, '');
 
-    const { error } = await supabaseAdmin
-      .from('profiles')
-      .update({ default_jastip_whatsapp: cleanPhone })
-      .eq('id', user.id);
+    // 1. Store in user_metadata (Auth) - always works without schema restrictions
+    const currentMeta = user.user_metadata || {};
+    
+    // Update user auth metadata
+    await supabase.auth.updateUser({
+      data: {
+        ...currentMeta,
+        default_jastip_whatsapp: cleanPhone
+      }
+    });
 
-    if (error) throw error;
+    await supabaseAdmin.auth.admin.updateUserById(user.id, {
+      user_metadata: {
+        ...currentMeta,
+        default_jastip_whatsapp: cleanPhone
+      }
+    });
+
+    // 2. Also try updating profiles if column exists (wrapped in try-catch so it won't crash if column is missing)
+    try {
+      await supabaseAdmin
+        .from('profiles')
+        .update({ default_jastip_whatsapp: cleanPhone } as any)
+        .eq('id', user.id);
+    } catch (profileErr) {
+      // Ignored if column does not exist in profiles schema
+      console.log('[PROFILES_SCHEMA_NOTICE] Stored in auth user_metadata instead.');
+    }
 
     revalidatePath('/jastip');
     revalidatePath('/home/jastip');
-    return { success: true, message: 'Nomor WhatsApp jastip berhasil disimpan ke database.' };
+    return { success: true, message: 'Nomor WhatsApp PIC Jastip berhasil disimpan.' };
   } catch (err: any) {
+    console.error('[UPDATE_WA_ERROR]', err);
     return { success: false, message: err.message || 'Gagal menyimpan nomor WhatsApp.' };
   }
 }
@@ -460,12 +502,18 @@ export async function createStudentJastipOrderAction(payload: {
       return { success: false, message: 'Total belanja harus lebih dari Rp 0.' };
     }
 
-    // Get Teacher Profile for default WhatsApp and permissions
-    const { data: teacherProfile } = await supabaseAdmin
-      .from('profiles')
-      .select('default_jastip_whatsapp, school_name, school_code')
-      .eq('id', studentRecord.user_id)
-      .maybeSingle();
+    // Get Teacher Profile and metadata for default WhatsApp
+    let teacherWhatsApp = '';
+    if (studentRecord.user_id) {
+      try {
+        const { data: teacherAuth } = await supabaseAdmin.auth.admin.getUserById(studentRecord.user_id);
+        if (teacherAuth?.user?.user_metadata?.default_jastip_whatsapp) {
+          teacherWhatsApp = teacherAuth.user.user_metadata.default_jastip_whatsapp;
+        }
+      } catch (err) {
+        console.error('[GET_TEACHER_AUTH_ERR]', err);
+      }
+    }
 
     // If Payment method is SALDO, check & deduct
     if (payload.paymentMethod === 'SALDO') {
@@ -555,8 +603,8 @@ export async function createStudentJastipOrderAction(payload: {
       }
     }
 
-    if (!targetWA && teacherProfile?.default_jastip_whatsapp) {
-      targetWA = teacherProfile.default_jastip_whatsapp.replace(/\D/g, '');
+    if (!targetWA && teacherWhatsApp) {
+      targetWA = teacherWhatsApp.replace(/\D/g, '');
     }
 
     if (!targetWA) {
