@@ -1,126 +1,95 @@
 'use server';
 
 import { createClient } from '@/lib/utils/supabase/server';
+import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import { cookies } from 'next/headers';
+import { revalidatePath } from 'next/cache';
 import type { JastipItem, JastipOrder } from '@/types';
 
-// Helper for simulated fallback storage
-let simulatedItems: JastipItem[] = [
-  {
-    id: '1',
-    name: 'Paket Sabun & Sikat Gigi Santri',
-    category: 'Perlengkapan Mandi',
-    price: 15000,
-    description: 'Sabun batang Lifebuoy, Sikat gigi Formula, Odol Pepsodent 120gr',
-    whatsapp_number: '',
-    is_available: true
-  },
-  {
-    id: '2',
-    name: 'Snack & Susu UHT Santri',
-    category: 'Makanan & Minuman',
-    price: 12000,
-    description: 'Susu Ultra Milk 200ml + Biskuit Roma Kelapa',
-    whatsapp_number: '',
-    is_available: true
-  },
-  {
-    id: '3',
-    name: 'Kitab & Buku Tulis Santri (Isi 5)',
-    category: 'Kitab & Buku',
-    price: 25000,
-    description: 'Buku tulis Sinar Dunia 38 lembar (5 pcs) + Pulpen Standard',
-    whatsapp_number: '',
-    is_available: true
-  },
-  {
-    id: '4',
-    name: 'Jasa Laundry Kilat (3 Kg)',
-    category: 'Laundry & Jasa',
-    price: 20000,
-    description: 'Cuci + Setrika wangi rapi selesai dalam 24 jam',
-    whatsapp_number: '',
-    is_available: true
-  }
-];
-
-let simulatedOrders: JastipOrder[] = [];
-let simulatedDefaultWhatsApp = '628123456789';
-
 // ==========================================
-// ADMIN ACTIONS
+// ADMIN / TEACHER ACTIONS
 // ==========================================
 
 export async function getAdminJastipItemsAction(): Promise<JastipItem[]> {
   try {
     const supabase = await createClient();
+    const supabaseAdmin = getSupabaseAdmin();
     const { data: { user } } = await supabase.auth.getUser();
 
-    const { data, error } = await supabase
+    if (!user) return [];
+
+    const { data, error } = await supabaseAdmin
       .from('jastip_items')
       .select('*')
+      .eq('user_id', user.id)
       .order('created_at', { ascending: false });
 
-    if (error || !data || data.length === 0) {
-      return simulatedItems;
+    if (error) {
+      console.error('[GET_ADMIN_JASTIP_ITEMS_ERROR]', error);
+      return [];
     }
-    return data as JastipItem[];
+
+    return (data as JastipItem[]) || [];
   } catch (err) {
     console.error('getAdminJastipItemsAction err', err);
-    return simulatedItems;
+    return [];
   }
 }
 
 export async function saveJastipItemAction(itemData: Partial<JastipItem>): Promise<{ success: boolean; message: string }> {
   try {
     const supabase = await createClient();
+    const supabaseAdmin = getSupabaseAdmin();
     const { data: { user } } = await supabase.auth.getUser();
 
+    if (!user) {
+      return { success: false, message: 'Sesi berakhir, silakan login kembali.' };
+    }
+
     if (itemData.id) {
-      // Update
-      const { error } = await supabase
+      // Update existing item
+      const { error } = await supabaseAdmin
         .from('jastip_items')
         .update({
           name: itemData.name,
-          category: itemData.category,
+          category: itemData.category || 'Kebutuhan Santri',
           price: itemData.price,
-          description: itemData.description,
-          whatsapp_number: itemData.whatsapp_number,
-          is_available: itemData.is_available,
+          description: itemData.description || null,
+          whatsapp_number: itemData.whatsapp_number ? itemData.whatsapp_number.replace(/\D/g, '') : null,
+          is_available: itemData.is_available ?? true,
         })
-        .eq('id', itemData.id);
+        .eq('id', itemData.id)
+        .eq('user_id', user.id);
 
-      if (error) {
-        // Fallback update
-        simulatedItems = simulatedItems.map(i => i.id === itemData.id ? { ...i, ...itemData } as JastipItem : i);
-      }
-      return { success: true, message: 'Item jastip berhasil diperbarui.' };
+      if (error) throw error;
+
+      revalidatePath('/jastip');
+      revalidatePath('/home/jastip');
+      return { success: true, message: 'Menu jastip berhasil diperbarui di database.' };
     } else {
-      // Create
-      const newItem: Partial<JastipItem> = {
+      // Create new item
+      const newItem = {
+        user_id: user.id,
         name: itemData.name,
         category: itemData.category || 'Kebutuhan Santri',
         price: itemData.price || 0,
-        description: itemData.description || '',
-        whatsapp_number: itemData.whatsapp_number || '',
+        description: itemData.description || null,
+        whatsapp_number: itemData.whatsapp_number ? itemData.whatsapp_number.replace(/\D/g, '') : null,
         is_available: itemData.is_available ?? true,
-        user_id: user?.id
       };
 
-      const { error } = await supabase
+      const { error } = await supabaseAdmin
         .from('jastip_items')
         .insert([newItem]);
 
-      if (error) {
-        simulatedItems.unshift({
-          ...newItem,
-          id: Math.random().toString(36).substring(2, 9),
-          created_at: new Date().toISOString()
-        } as JastipItem);
-      }
+      if (error) throw error;
+
+      revalidatePath('/jastip');
+      revalidatePath('/home/jastip');
       return { success: true, message: 'Menu jastip baru berhasil ditambahkan.' };
     }
   } catch (err: any) {
+    console.error('[SAVE_JASTIP_ITEM_ERROR]', err);
     return { success: false, message: err.message || 'Gagal menyimpan item jastip.' };
   }
 }
@@ -128,92 +97,187 @@ export async function saveJastipItemAction(itemData: Partial<JastipItem>): Promi
 export async function deleteJastipItemAction(itemId: string): Promise<{ success: boolean; message: string }> {
   try {
     const supabase = await createClient();
-    const { error } = await supabase
+    const supabaseAdmin = getSupabaseAdmin();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) return { success: false, message: 'Sesi berakhir.' };
+
+    const { error } = await supabaseAdmin
       .from('jastip_items')
       .delete()
-      .eq('id', itemId);
+      .eq('id', itemId)
+      .eq('user_id', user.id);
 
-    if (error) {
-      simulatedItems = simulatedItems.filter(i => i.id !== itemId);
-    }
+    if (error) throw error;
+
+    revalidatePath('/jastip');
+    revalidatePath('/home/jastip');
     return { success: true, message: 'Menu jastip berhasil dihapus.' };
   } catch (err: any) {
-    simulatedItems = simulatedItems.filter(i => i.id !== itemId);
-    return { success: true, message: 'Menu jastip dihapus.' };
+    return { success: false, message: err.message || 'Gagal menghapus menu jastip.' };
   }
 }
 
 export async function toggleJastipAvailabilityAction(itemId: string, isAvailable: boolean): Promise<{ success: boolean; message: string }> {
   try {
     const supabase = await createClient();
-    await supabase
+    const supabaseAdmin = getSupabaseAdmin();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) return { success: false, message: 'Sesi berakhir.' };
+
+    const { error } = await supabaseAdmin
       .from('jastip_items')
       .update({ is_available: isAvailable })
-      .eq('id', itemId);
+      .eq('id', itemId)
+      .eq('user_id', user.id);
 
-    simulatedItems = simulatedItems.map(i => i.id === itemId ? { ...i, is_available: isAvailable } : i);
+    if (error) throw error;
+
+    revalidatePath('/jastip');
+    revalidatePath('/home/jastip');
     return { success: true, message: 'Status ketersediaan berhasil diubah.' };
   } catch (err: any) {
-    simulatedItems = simulatedItems.map(i => i.id === itemId ? { ...i, is_available: isAvailable } : i);
-    return { success: true, message: 'Status ketersediaan diubah.' };
+    return { success: false, message: err.message || 'Gagal mengubah status ketersediaan.' };
   }
 }
 
 export async function getDefaultJastipConfigAction(): Promise<{ default_jastip_whatsapp: string }> {
   try {
     const supabase = await createClient();
+    const supabaseAdmin = getSupabaseAdmin();
     const { data: { user } } = await supabase.auth.getUser();
 
-    if (user) {
-      const { data } = await supabase
-        .from('profiles')
-        .select('school_code, email')
-        .eq('id', user.id)
-        .single();
+    if (!user) return { default_jastip_whatsapp: '' };
 
-      return { default_jastip_whatsapp: simulatedDefaultWhatsApp };
-    }
-    return { default_jastip_whatsapp: simulatedDefaultWhatsApp };
-  } catch {
-    return { default_jastip_whatsapp: simulatedDefaultWhatsApp };
+    const { data } = await supabaseAdmin
+      .from('profiles')
+      .select('default_jastip_whatsapp')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    return { default_jastip_whatsapp: data?.default_jastip_whatsapp || '' };
+  } catch (err) {
+    console.error('[GET_DEFAULT_JASTIP_CONFIG_ERROR]', err);
+    return { default_jastip_whatsapp: '' };
   }
 }
 
 export async function updateDefaultJastipWhatsAppAction(whatsappNumber: string): Promise<{ success: boolean; message: string }> {
-  simulatedDefaultWhatsApp = whatsappNumber;
-  return { success: true, message: 'Nomor WhatsApp jastip berhasil disimpan.' };
+  try {
+    const supabase = await createClient();
+    const supabaseAdmin = getSupabaseAdmin();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) return { success: false, message: 'Sesi berakhir.' };
+
+    const cleanPhone = whatsappNumber.replace(/\D/g, '');
+
+    const { error } = await supabaseAdmin
+      .from('profiles')
+      .update({ default_jastip_whatsapp: cleanPhone })
+      .eq('id', user.id);
+
+    if (error) throw error;
+
+    revalidatePath('/jastip');
+    revalidatePath('/home/jastip');
+    return { success: true, message: 'Nomor WhatsApp jastip berhasil disimpan ke database.' };
+  } catch (err: any) {
+    return { success: false, message: err.message || 'Gagal menyimpan nomor WhatsApp.' };
+  }
 }
 
 export async function getAdminJastipOrdersAction(): Promise<JastipOrder[]> {
   try {
     const supabase = await createClient();
-    const { data, error } = await supabase
+    const supabaseAdmin = getSupabaseAdmin();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) return [];
+
+    const { data, error } = await supabaseAdmin
       .from('jastip_orders')
-      .select('*, students(id, name, class, nis, whatsapp_number)')
+      .select(`
+        id,
+        created_at,
+        student_id,
+        user_id,
+        items,
+        total_amount,
+        status,
+        payment_method,
+        notes,
+        students (id, name, class, nis, whatsapp_number)
+      `)
+      .eq('user_id', user.id)
       .order('created_at', { ascending: false });
 
-    if (error || !data || data.length === 0) {
-      return simulatedOrders;
+    if (error) {
+      console.error('[GET_ADMIN_JASTIP_ORDERS_ERROR]', error);
+      return [];
     }
-    return data as JastipOrder[];
+
+    return (data as unknown as JastipOrder[]) || [];
   } catch (err) {
-    return simulatedOrders;
+    console.error('getAdminJastipOrdersAction err', err);
+    return [];
   }
 }
 
-export async function updateJastipOrderStatusAction(orderId: string, status: 'PENDING' | 'DIPROSES' | 'SELESAI' | 'DIBATALKAN'): Promise<{ success: boolean; message: string }> {
+export async function updateJastipOrderStatusAction(
+  orderId: string, 
+  status: 'PENDING' | 'DIPROSES' | 'SELESAI' | 'DIBATALKAN'
+): Promise<{ success: boolean; message: string }> {
   try {
     const supabase = await createClient();
-    await supabase
+    const supabaseAdmin = getSupabaseAdmin();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) return { success: false, message: 'Sesi berakhir.' };
+
+    // Fetch current order details
+    const { data: currentOrder, error: fetchErr } = await supabaseAdmin
+      .from('jastip_orders')
+      .select('*')
+      .eq('id', orderId)
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (fetchErr || !currentOrder) {
+      return { success: false, message: 'Pesanan tidak ditemukan.' };
+    }
+
+    // Auto refund if status is changed to DIBATALKAN and payment was SALDO
+    if (status === 'DIBATALKAN' && currentOrder.status !== 'DIBATALKAN' && currentOrder.payment_method === 'SALDO') {
+      await supabaseAdmin.from('transactions').insert([{
+        student_id: currentOrder.student_id,
+        user_id: user.id,
+        type: 'Pemasukan',
+        category: 'BELANJA_JASTIP',
+        amount: currentOrder.total_amount,
+        description: `Refund Jastip Dibatalkan #${orderId.slice(0, 8).toUpperCase()}`,
+        is_settled: true
+      }]);
+    }
+
+    const { error } = await supabaseAdmin
       .from('jastip_orders')
       .update({ status })
-      .eq('id', orderId);
+      .eq('id', orderId)
+      .eq('user_id', user.id);
 
-    simulatedOrders = simulatedOrders.map(o => o.id === orderId ? { ...o, status } : o);
-    return { success: true, message: `Status pesanan berhasil diubah ke ${status}.` };
+    if (error) throw error;
+
+    revalidatePath('/jastip');
+    revalidatePath('/home/jastip');
+    revalidatePath('/home');
+    revalidatePath('/dashboard');
+    revalidatePath('/today-transactions');
+
+    return { success: true, message: `Status pesanan #${orderId.slice(0, 8).toUpperCase()} diubah ke ${status}.` };
   } catch (err: any) {
-    simulatedOrders = simulatedOrders.map(o => o.id === orderId ? { ...o, status } : o);
-    return { success: true, message: `Status pesanan diubah ke ${status}.` };
+    return { success: false, message: err.message || 'Gagal mengubah status pesanan.' };
   }
 }
 
@@ -234,81 +298,97 @@ export async function getStudentJastipCatalogAction(): Promise<{
   } | null;
 }> {
   try {
-    const cookieStore = await cookies();
-    const studentCookie = cookieStore.get('student_session')?.value;
-
-    let studentData: any = null;
-    let balance = 0;
-    let todaySpending = 0;
-
     const supabase = await createClient();
+    const supabaseAdmin = getSupabaseAdmin();
+    const { data: { user } } = await supabase.auth.getUser();
 
-    if (studentCookie) {
-      try {
-        const parsed = JSON.parse(studentCookie);
-        if (parsed.id) {
-          const { data: std } = await supabase
-            .from('students')
-            .select('*, transactions(*)')
-            .eq('id', parsed.id)
-            .single();
+    let studentRecord: any = null;
 
-          if (std) {
-            const txs = std.transactions || [];
-            const pemasukan = txs.filter((t: any) => t.type === 'Pemasukan').reduce((acc: number, t: any) => acc + Number(t.amount), 0);
-            const pengeluaran = txs.filter((t: any) => t.type === 'Pengeluaran').reduce((acc: number, t: any) => acc + Number(t.amount), 0);
-            balance = pemasukan - pengeluaran;
+    if (user) {
+      const { data: std } = await supabaseAdmin
+        .from('students')
+        .select('id, nis, name, class, daily_limit, user_id, transactions(*)')
+        .eq('id', user.id)
+        .maybeSingle();
 
-            const todayStr = new Date().toISOString().split('T')[0];
-            todaySpending = txs
-              .filter((t: any) => t.type === 'Pengeluaran' && t.created_at?.startsWith(todayStr))
-              .reduce((acc: number, t: any) => acc + Number(t.amount), 0);
-
-            studentData = {
-              id: std.id,
-              name: std.name,
-              class: std.class,
-              nis: std.nis,
-              balance,
-              daily_limit: std.daily_limit,
-              today_spending: todaySpending
-            };
-          }
-        }
-      } catch (e) {
-        console.error('Failed to parse student cookie', e);
+      if (std) {
+        studentRecord = std;
       }
     }
 
-    // Default sample student if not authenticated in browser
-    if (!studentData) {
+    // Fallback: check student cookie if session exists
+    if (!studentRecord) {
+      const cookieStore = await cookies();
+      const studentCookie = cookieStore.get('student_session')?.value;
+      if (studentCookie) {
+        try {
+          const parsed = JSON.parse(studentCookie);
+          if (parsed.id) {
+            const { data: std } = await supabaseAdmin
+              .from('students')
+              .select('id, nis, name, class, daily_limit, user_id, transactions(*)')
+              .eq('id', parsed.id)
+              .maybeSingle();
+            if (std) studentRecord = std;
+          }
+        } catch {}
+      }
+    }
+
+    let studentData = null;
+    let teacherUserId = null;
+
+    if (studentRecord) {
+      teacherUserId = studentRecord.user_id;
+      const txs = studentRecord.transactions || [];
+      const pemasukan = txs.filter((t: any) => t.type === 'Pemasukan').reduce((acc: number, t: any) => acc + Number(t.amount), 0);
+      const pengeluaran = txs.filter((t: any) => t.type === 'Pengeluaran').reduce((acc: number, t: any) => acc + Number(t.amount), 0);
+      const balance = pemasukan - pengeluaran;
+
+      const todayStr = new Date().toISOString().split('T')[0];
+      const todaySpending = txs
+        .filter((t: any) => t.type === 'Pengeluaran' && t.created_at?.startsWith(todayStr))
+        .reduce((acc: number, t: any) => acc + Number(t.amount), 0);
+
       studentData = {
-        id: 'sample-student-1',
-        name: 'Ahmad Santri',
-        class: 'X-A',
-        nis: '2024001',
-        balance: 150000,
-        daily_limit: 50000,
-        today_spending: 10000
+        id: studentRecord.id,
+        name: studentRecord.name,
+        class: studentRecord.class,
+        nis: studentRecord.nis,
+        balance,
+        daily_limit: studentRecord.daily_limit,
+        today_spending: todaySpending
       };
     }
 
-    // Fetch items
-    const { data: dbItems } = await supabase
+    // Query real jastip items from database
+    let query = supabaseAdmin
       .from('jastip_items')
       .select('*')
-      .eq('is_available', true)
-      .order('created_at', { ascending: false });
+      .eq('is_available', true);
 
-    const items = (dbItems && dbItems.length > 0) ? dbItems : simulatedItems.filter(i => i.is_available);
+    if (teacherUserId) {
+      query = query.eq('user_id', teacherUserId);
+    }
+
+    const { data: dbItems, error } = await query.order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('[GET_STUDENT_JASTIP_CATALOG_ERROR]', error);
+      return {
+        items: [],
+        student: studentData
+      };
+    }
 
     return {
-      items: items as JastipItem[],
+      items: (dbItems as JastipItem[]) || [],
       student: studentData
     };
   } catch (err) {
+    console.error('getStudentJastipCatalogAction err', err);
     return {
-      items: simulatedItems.filter(i => i.is_available),
+      items: [],
       student: null
     };
   }
@@ -328,23 +408,42 @@ export async function createStudentJastipOrderAction(payload: {
   };
 }> {
   try {
-    const cookieStore = await cookies();
-    const studentCookie = cookieStore.get('student_session')?.value;
-
     const supabase = await createClient();
-    let studentId = '';
-    let studentName = 'Santri';
-    let studentClass = '';
-    let studentNis = '';
+    const supabaseAdmin = getSupabaseAdmin();
+    const { data: { user } } = await supabase.auth.getUser();
 
-    if (studentCookie) {
-      try {
-        const parsed = JSON.parse(studentCookie);
-        studentId = parsed.id;
-        studentName = parsed.name;
-        studentClass = parsed.class;
-        studentNis = parsed.nis;
-      } catch {}
+    let studentRecord: any = null;
+
+    if (user) {
+      const { data: std } = await supabaseAdmin
+        .from('students')
+        .select('*, transactions(*)')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      if (std) studentRecord = std;
+    }
+
+    if (!studentRecord) {
+      const cookieStore = await cookies();
+      const studentCookie = cookieStore.get('student_session')?.value;
+      if (studentCookie) {
+        try {
+          const parsed = JSON.parse(studentCookie);
+          if (parsed.id) {
+            const { data: std } = await supabaseAdmin
+              .from('students')
+              .select('*, transactions(*)')
+              .eq('id', parsed.id)
+              .maybeSingle();
+            if (std) studentRecord = std;
+          }
+        } catch {}
+      }
+    }
+
+    if (!studentRecord) {
+      return { success: false, message: 'Sesi santri tidak ditemukan. Silakan login kembali.' };
     }
 
     const orderItems = payload.items.map(it => ({
@@ -357,61 +456,70 @@ export async function createStudentJastipOrderAction(payload: {
 
     const totalAmount = orderItems.reduce((sum, it) => sum + it.subtotal, 0);
 
+    if (totalAmount <= 0) {
+      return { success: false, message: 'Total belanja harus lebih dari Rp 0.' };
+    }
+
+    // Get Teacher Profile for default WhatsApp and permissions
+    const { data: teacherProfile } = await supabaseAdmin
+      .from('profiles')
+      .select('default_jastip_whatsapp, school_name, school_code')
+      .eq('id', studentRecord.user_id)
+      .maybeSingle();
+
     // If Payment method is SALDO, check & deduct
-    if (payload.paymentMethod === 'SALDO' && studentId) {
-      // Check balance
-      const { data: std } = await supabase
-        .from('students')
-        .select('*, transactions(*)')
-        .eq('id', studentId)
-        .single();
+    if (payload.paymentMethod === 'SALDO') {
+      const txs = studentRecord.transactions || [];
+      const pemasukan = txs.filter((t: any) => t.type === 'Pemasukan').reduce((acc: number, t: any) => acc + Number(t.amount), 0);
+      const pengeluaran = txs.filter((t: any) => t.type === 'Pengeluaran').reduce((acc: number, t: any) => acc + Number(t.amount), 0);
+      const currentBalance = pemasukan - pengeluaran;
 
-      if (std) {
-        const txs = std.transactions || [];
-        const pemasukan = txs.filter((t: any) => t.type === 'Pemasukan').reduce((acc: number, t: any) => acc + Number(t.amount), 0);
-        const pengeluaran = txs.filter((t: any) => t.type === 'Pengeluaran').reduce((acc: number, t: any) => acc + Number(t.amount), 0);
-        const currentBalance = pemasukan - pengeluaran;
+      if (currentBalance < totalAmount) {
+        return {
+          success: false,
+          message: `Saldo tabungan tidak mencukupi (Saldo: Rp ${currentBalance.toLocaleString('id-ID')}, Tagihan: Rp ${totalAmount.toLocaleString('id-ID')}). Anda bisa memilih metode Bayar via WA.`
+        };
+      }
 
-        if (currentBalance < totalAmount) {
+      // Check daily limit
+      if (studentRecord.daily_limit && studentRecord.daily_limit > 0) {
+        const todayStr = new Date().toISOString().split('T')[0];
+        const todaySpent = txs
+          .filter((t: any) => t.type === 'Pengeluaran' && t.created_at?.startsWith(todayStr))
+          .reduce((acc: number, t: any) => acc + Number(t.amount), 0);
+
+        if (todaySpent + totalAmount > studentRecord.daily_limit) {
           return {
             success: false,
-            message: `Saldo tidak mencukupi (Saldo: Rp ${currentBalance.toLocaleString('id-ID')}, Tagihan: Rp ${totalAmount.toLocaleString('id-ID')})`
+            message: `Transaksi melebihi batas belanja harian santri (Limit: Rp ${studentRecord.daily_limit.toLocaleString('id-ID')})`
           };
         }
+      }
 
-        // Check daily limit
-        if (std.daily_limit && std.daily_limit > 0) {
-          const todayStr = new Date().toISOString().split('T')[0];
-          const todaySpent = txs
-            .filter((t: any) => t.type === 'Pengeluaran' && t.created_at?.startsWith(todayStr))
-            .reduce((acc: number, t: any) => acc + Number(t.amount), 0);
-
-          if (todaySpent + totalAmount > std.daily_limit) {
-            return {
-              success: false,
-              message: `Transaksi melebihi batas jajan harian santri (Limit: Rp ${std.daily_limit.toLocaleString('id-ID')})`
-            };
-          }
+      // Insert Transaction Record (Category BELANJA_JASTIP)
+      const summaryStr = orderItems.map(i => `${i.name} (${i.quantity}x)`).join(', ');
+      const { error: txError } = await supabaseAdmin.from('transactions').insert([
+        {
+          student_id: studentRecord.id,
+          user_id: studentRecord.user_id,
+          type: 'Pengeluaran',
+          category: 'BELANJA_JASTIP',
+          amount: totalAmount,
+          description: `Jastip: ${summaryStr}`,
+          is_settled: false
         }
+      ]);
 
-        // Insert Transaction Record (Category BELANJA_JASTIP)
-        const summaryStr = orderItems.map(i => `${i.name} (${i.quantity}x)`).join(', ');
-        await supabase.from('transactions').insert([
-          {
-            student_id: studentId,
-            type: 'Pengeluaran',
-            category: 'BELANJA_JASTIP',
-            amount: totalAmount,
-            description: `Jastip Santri: ${summaryStr}`,
-            is_settled: false
-          }
-        ]);
+      if (txError) {
+        console.error('[INSERT_JASTIP_TRANSACTION_ERROR]', txError);
+        return { success: false, message: 'Gagal memproses pemotongan saldo: ' + txError.message };
       }
     }
 
-    // Insert order record
+    // Insert order record into jastip_orders
     const orderRecord = {
-      student_id: studentId || null,
+      student_id: studentRecord.id,
+      user_id: studentRecord.user_id,
       items: orderItems,
       total_amount: totalAmount,
       notes: payload.notes || null,
@@ -419,33 +527,45 @@ export async function createStudentJastipOrderAction(payload: {
       payment_method: payload.paymentMethod
     };
 
-    let createdId = Math.random().toString(36).substring(2, 10).toUpperCase();
-
-    const { data: insertedOrder, error: orderErr } = await supabase
+    const { data: insertedOrder, error: orderErr } = await supabaseAdmin
       .from('jastip_orders')
       .insert([orderRecord])
       .select('id')
       .single();
 
-    if (insertedOrder) {
-      createdId = insertedOrder.id;
-    } else {
-      simulatedOrders.unshift({
-        id: createdId,
-        created_at: new Date().toISOString(),
-        student_id: studentId || 'sample-student-1',
-        items: orderItems,
-        total_amount: totalAmount,
-        notes: payload.notes || null,
-        status: 'PENDING',
-        payment_method: payload.paymentMethod,
-        students: {
-          id: studentId || 'sample-student-1',
-          name: studentName || 'Ahmad Santri',
-          class: studentClass || 'X-A',
-          nis: studentNis || '2024001'
-        }
-      });
+    if (orderErr) {
+      console.error('[INSERT_JASTIP_ORDER_ERROR]', orderErr);
+      return { success: false, message: 'Gagal mencatat pesanan: ' + orderErr.message };
+    }
+
+    const createdId = insertedOrder.id;
+
+    // Determine target WhatsApp number:
+    // 1. Check if first item has custom whatsapp
+    let targetWA = '';
+    const firstItemId = payload.items[0]?.id;
+    if (firstItemId) {
+      const { data: itemData } = await supabaseAdmin
+        .from('jastip_items')
+        .select('whatsapp_number')
+        .eq('id', firstItemId)
+        .maybeSingle();
+      if (itemData?.whatsapp_number) {
+        targetWA = itemData.whatsapp_number.replace(/\D/g, '');
+      }
+    }
+
+    if (!targetWA && teacherProfile?.default_jastip_whatsapp) {
+      targetWA = teacherProfile.default_jastip_whatsapp.replace(/\D/g, '');
+    }
+
+    if (!targetWA) {
+      targetWA = '628123456789';
+    }
+
+    // Clean phone number (e.g. 0812 -> 62812)
+    if (targetWA.startsWith('0')) {
+      targetWA = '62' + targetWA.slice(1);
     }
 
     // Generate WhatsApp Text
@@ -454,17 +574,22 @@ export async function createStudentJastipOrderAction(payload: {
     const notesText = payload.notes ? `%0A*Catatan/Kamar:* ${encodeURIComponent(payload.notes)}` : '';
 
     const waMessage = `*PESANAN JASTIP SANTRI*%0A%0A` +
-      `*No. Pesanan:* %23${createdId.slice(0, 8)}%0A` +
-      `*Nama Santri:* ${encodeURIComponent(studentName)} (${encodeURIComponent(studentClass)})%0A` +
-      `*NIS:* ${encodeURIComponent(studentNis)}%0A%0A` +
+      `*No. Pesanan:* %23${createdId.slice(0, 8).toUpperCase()}%0A` +
+      `*Nama Santri:* ${encodeURIComponent(studentRecord.name)} (${encodeURIComponent(studentRecord.class)})%0A` +
+      `*NIS:* ${encodeURIComponent(studentRecord.nis.includes('_arc_') ? studentRecord.nis.split('_arc_')[0] : studentRecord.nis)}%0A%0A` +
       `*Rincian Belanja:*%0A${itemsListText}%0A%0A` +
       `*Total Tagihan:* Rp ${totalAmount.toLocaleString('id-ID')}%0A` +
       `*Metode Pembayaran:* ${paymentText}` +
       `${notesText}%0A%0A` +
       `Mohon segera diproses. Terima kasih!`;
 
-    const targetWA = simulatedDefaultWhatsApp.replace(/\D/g, '');
     const waLink = `https://wa.me/${targetWA}?text=${waMessage}`;
+
+    revalidatePath('/jastip');
+    revalidatePath('/home/jastip');
+    revalidatePath('/home');
+    revalidatePath('/dashboard');
+    revalidatePath('/today-transactions');
 
     return {
       success: true,
@@ -476,38 +601,46 @@ export async function createStudentJastipOrderAction(payload: {
       }
     };
   } catch (err: any) {
+    console.error('createStudentJastipOrderAction err', err);
     return { success: false, message: err.message || 'Gagal memproses pesanan jastip.' };
   }
 }
 
 export async function getStudentJastipOrdersAction(): Promise<JastipOrder[]> {
   try {
-    const cookieStore = await cookies();
-    const studentCookie = cookieStore.get('student_session')?.value;
-
-    let studentId = '';
-    if (studentCookie) {
-      try {
-        const parsed = JSON.parse(studentCookie);
-        studentId = parsed.id;
-      } catch {}
-    }
-
     const supabase = await createClient();
-    if (studentId) {
-      const { data, error } = await supabase
-        .from('jastip_orders')
-        .select('*')
-        .eq('student_id', studentId)
-        .order('created_at', { ascending: false });
+    const supabaseAdmin = getSupabaseAdmin();
+    const { data: { user } } = await supabase.auth.getUser();
 
-      if (!error && data && data.length > 0) {
-        return data as JastipOrder[];
+    let studentId = user?.id;
+
+    if (!studentId) {
+      const cookieStore = await cookies();
+      const studentCookie = cookieStore.get('student_session')?.value;
+      if (studentCookie) {
+        try {
+          const parsed = JSON.parse(studentCookie);
+          studentId = parsed.id;
+        } catch {}
       }
     }
 
-    return simulatedOrders;
-  } catch {
-    return simulatedOrders;
+    if (!studentId) return [];
+
+    const { data, error } = await supabaseAdmin
+      .from('jastip_orders')
+      .select('*')
+      .eq('student_id', studentId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('[GET_STUDENT_JASTIP_ORDERS_ERROR]', error);
+      return [];
+    }
+
+    return (data as JastipOrder[]) || [];
+  } catch (err) {
+    console.error('getStudentJastipOrdersAction err', err);
+    return [];
   }
 }
