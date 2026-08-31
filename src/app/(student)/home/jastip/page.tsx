@@ -279,14 +279,27 @@ export default function StudentJastipShopPage() {
 
       {/* Main Tabs */}
       <Tabs defaultValue="shop" className="w-full">
-        <TabsList className="grid w-full grid-cols-2 mb-4 rounded-2xl bg-muted/60 p-1.5 h-12">
-          <TabsTrigger value="shop" className="rounded-xl font-bold text-xs uppercase tracking-wider gap-1.5">
-            <Store className="h-4 w-4" /> Katalog Belanja
-          </TabsTrigger>
-          <TabsTrigger value="history" className="rounded-xl font-bold text-xs uppercase tracking-wider gap-1.5">
-            <Receipt className="h-4 w-4" /> Pesanan Saya ({orders.length})
-          </TabsTrigger>
-        </TabsList>
+        <div className="bg-gray-100/90 p-1.5 rounded-2xl mb-4">
+          <TabsList className="grid w-full grid-cols-2 bg-transparent h-auto p-0 gap-1">
+            <TabsTrigger 
+              value="shop" 
+              className="rounded-xl font-bold text-xs py-2.5 data-[state=active]:bg-white data-[state=active]:text-pink-600 data-[state=active]:shadow-xs transition-all flex items-center justify-center gap-1.5"
+            >
+              <Store className="h-4 w-4" />
+              <span>Katalog Belanja</span>
+            </TabsTrigger>
+            <TabsTrigger 
+              value="history" 
+              className="rounded-xl font-bold text-xs py-2.5 data-[state=active]:bg-white data-[state=active]:text-pink-600 data-[state=active]:shadow-xs transition-all flex items-center justify-center gap-1.5"
+            >
+              <Receipt className="h-4 w-4" />
+              <span>Pesanan Saya</span>
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-gray-200/80 data-[state=active]:bg-pink-100 data-[state=active]:text-pink-700 font-black">
+                {orders.length}
+              </span>
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         {/* TAB 1: KATALOG BELANJA */}
         <TabsContent value="shop" className="space-y-4">
