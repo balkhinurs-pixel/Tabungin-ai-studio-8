@@ -47,9 +47,11 @@ import { Separator } from '@/components/ui/separator';
 
 const TransactionRow = ({ tx }: { tx: Transaction }) => {
     const isIncome = tx.type === 'Pemasukan';
+    const isJastip = tx.description?.toLowerCase().includes('jastip') || tx.category === 'BELANJA_JASTIP';
     
     const getIcon = () => {
         if (isIncome) return <ArrowUpCircle className="h-5 w-5 text-green-600" />;
+        if (isJastip) return <ShoppingBag className="h-5 w-5 text-pink-600" />;
         switch (tx.category) {
             case 'BIAYA_ADMIN': return <ShieldEllipsis className="h-5 w-5 text-indigo-600" />;
             case 'BELANJA_KANTIN': return <UtensilsCrossed className="h-5 w-5 text-orange-600" />;
@@ -60,6 +62,7 @@ const TransactionRow = ({ tx }: { tx: Transaction }) => {
 
     const getBgColor = () => {
         if (isIncome) return "bg-green-50";
+        if (isJastip) return "bg-pink-50";
         switch (tx.category) {
             case 'BIAYA_ADMIN': return "bg-indigo-50";
             case 'BELANJA_KANTIN': return "bg-orange-50";

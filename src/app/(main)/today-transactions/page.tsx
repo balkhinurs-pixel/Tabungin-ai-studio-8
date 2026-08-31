@@ -18,7 +18,8 @@ import {
   ChevronRight,
   ShieldEllipsis,
   Download,
-  FileText
+  FileText,
+  ShoppingBag
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -183,7 +184,10 @@ export default function TodayTransactionsPage() {
     }
   };
 
-  const getCategoryIcon = (category: string) => {
+  const getCategoryIcon = (category: string, description?: string) => {
+    if (description?.toLowerCase().includes('jastip') || category === 'BELANJA_JASTIP') {
+      return <ShoppingBag className="h-3 w-3 text-pink-600" />;
+    }
     switch (category) {
         case 'BELANJA_KANTIN': return <UtensilsCrossed className="h-3 w-3" />;
         case 'TARIK_TUNAI': return <MonitorSmartphone className="h-3 w-3" />;
@@ -192,7 +196,10 @@ export default function TodayTransactionsPage() {
     }
   };
 
-  const getCategoryLabel = (category: string) => {
+  const getCategoryLabel = (category: string, description?: string) => {
+    if (description?.toLowerCase().includes('jastip') || category === 'BELANJA_JASTIP') {
+      return 'Jastip';
+    }
     switch (category) {
         case 'BELANJA_KANTIN': return 'Kantin';
         case 'TARIK_TUNAI': return 'ATM Kios';
@@ -359,8 +366,8 @@ export default function TodayTransactionsPage() {
                                           <span className="text-[10px] font-black text-gray-400">{format(new Date(tx.created_at!), 'HH:mm')}</span>
                                           <span className="h-1 w-1 rounded-full bg-gray-200" />
                                           <div className="flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-primary/70 bg-primary/5 px-1.5 py-0.5 rounded">
-                                              {getCategoryIcon(tx.category)}
-                                              {getCategoryLabel(tx.category)}
+                                              {getCategoryIcon(tx.category, tx.description)}
+                                              {getCategoryLabel(tx.category, tx.description)}
                                           </div>
                                       </div>
                                   </div>

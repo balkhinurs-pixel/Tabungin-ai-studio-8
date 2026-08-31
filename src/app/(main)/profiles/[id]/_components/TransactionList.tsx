@@ -120,8 +120,9 @@ export default function TransactionList({ initialTransactions, isStudentView = f
                             </TableRow>
                         )}
                         {transactions.map((tx) => {
-                            // Cek apakah transaksi bersifat sistem (tidak boleh dihapus)
-                            const isSystemTransaction = tx.category === 'BELANJA_KANTIN' || tx.category === 'TARIK_TUNAI';
+                            // Cek apakah transaksi bersifat sistem (tidak boleh dihapus manual)
+                            const isSystemTransaction = tx.category === 'BELANJA_KANTIN' || tx.category === 'TARIK_TUNAI' || tx.category === 'BIAYA_ADMIN' || tx.description?.toLowerCase().includes('jastip');
+                            const isJastip = tx.description?.toLowerCase().includes('jastip');
                             
                             return (
                                 <TableRow key={tx.id} className="group hover:bg-gray-50/50 transition-colors">
@@ -137,7 +138,9 @@ export default function TransactionList({ initialTransactions, isStudentView = f
                                         <div className="flex flex-col">
                                             <span className="text-xs font-bold text-gray-700">{tx.description}</span>
                                             {isSystemTransaction && (
-                                                <span className="text-[8px] font-black uppercase tracking-widest text-primary/50">Otomatis • {tx.category?.replace('_', ' ')}</span>
+                                                <span className="text-[8px] font-black uppercase tracking-widest text-primary/50">
+                                                    {isJastip ? 'Otomatis • JASTIP' : `Otomatis • ${tx.category?.replace('_', ' ')}`}
+                                                </span>
                                             )}
                                         </div>
                                     </TableCell>

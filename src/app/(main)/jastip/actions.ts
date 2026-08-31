@@ -296,7 +296,7 @@ export async function updateJastipOrderStatusAction(
         student_id: currentOrder.student_id,
         user_id: user.id,
         type: 'Pemasukan',
-        category: 'BELANJA_JASTIP',
+        category: 'TABUNGAN',
         amount: currentOrder.total_amount,
         description: `Refund Jastip Dibatalkan #${orderId.slice(0, 8).toUpperCase()}`,
         is_settled: true
@@ -544,17 +544,17 @@ export async function createStudentJastipOrderAction(payload: {
         }
       }
 
-      // Insert Transaction Record (Category BELANJA_JASTIP)
+      // Insert Transaction Record (Use standard valid category TABUNGAN with descriptive Jastip text)
       const summaryStr = orderItems.map(i => `${i.name} (${i.quantity}x)`).join(', ');
       const { error: txError } = await supabaseAdmin.from('transactions').insert([
         {
           student_id: studentRecord.id,
           user_id: studentRecord.user_id,
           type: 'Pengeluaran',
-          category: 'BELANJA_JASTIP',
+          category: 'TABUNGAN',
           amount: totalAmount,
-          description: `Jastip: ${summaryStr}`,
-          is_settled: false
+          description: `Belanja Jastip: ${summaryStr}`,
+          is_settled: true
         }
       ]);
 
