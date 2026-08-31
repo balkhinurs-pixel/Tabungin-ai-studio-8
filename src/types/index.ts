@@ -15,7 +15,47 @@ export interface Transaction {
     name: string;
     class: string;
     nis: string;
+    whatsapp_number?: string | null;
   }
+}
+
+export interface JastipItem {
+  id: string;
+  created_at?: string;
+  name: string;
+  category: string;
+  price: number;
+  description?: string | null;
+  whatsapp_number?: string | null;
+  is_available: boolean;
+  user_id?: string;
+}
+
+export interface JastipOrderItem {
+  id: string;
+  name: string;
+  price: number;
+  quantity: number;
+  subtotal: number;
+}
+
+export interface JastipOrder {
+  id: string;
+  created_at?: string;
+  student_id: string;
+  user_id?: string;
+  items: JastipOrderItem[];
+  total_amount: number;
+  notes?: string | null;
+  status: 'PENDING' | 'DIPROSES' | 'SELESAI' | 'DIBATALKAN';
+  payment_method: 'SALDO' | 'WHATSAPP';
+  students?: {
+    id: string;
+    name: string;
+    class: string;
+    nis: string;
+    whatsapp_number?: string | null;
+  };
 }
 
 export interface Student {
@@ -39,45 +79,4 @@ export interface Profile {
   school_code?: string | null;
   custom_quota?: number | null;
   admin_fee?: number | null;
-  default_jastip_whatsapp?: string | null;
-}
-
-export interface JastipItem {
-  id: string;
-  user_id?: string;
-  name: string;
-  category: string;
-  price: number;
-  description?: string | null;
-  whatsapp_number?: string | null;
-  is_available: boolean;
-  image_url?: string | null;
-  created_at?: string;
-}
-
-export interface JastipOrderItem {
-  id: string;
-  name: string;
-  price: number;
-  quantity: number;
-  subtotal: number;
-}
-
-export interface JastipOrder {
-  id: string;
-  student_id: string;
-  user_id?: string;
-  items: JastipOrderItem[];
-  total_amount: number;
-  status: 'PENDING' | 'DIPROSES' | 'SELESAI' | 'DIBATALKAN';
-  payment_method: 'SALDO' | 'WHATSAPP';
-  notes?: string | null;
-  created_at?: string;
-  students?: {
-    id: string;
-    name: string;
-    class: string;
-    nis: string;
-    whatsapp_number?: string | null;
-  };
 }

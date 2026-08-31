@@ -27,10 +27,10 @@ interface MenuItem {
 
 const ALL_MENUS: MenuItem[] = [
   { icon: Users, label: 'Siswa', description: 'Kelola data profil siswa', href: '/profiles', color: 'text-blue-600', bg: 'bg-blue-50' },
-  { icon: ShoppingBag, label: 'Jastip', description: 'Kelola toko & pesanan jastip', href: '/jastip', color: 'text-pink-600', bg: 'bg-pink-50' },
   { icon: QrCode, label: 'Scan', description: 'Pindai kartu transaksi', href: '/transactions', color: 'text-orange-600', bg: 'bg-orange-50' },
   { icon: History, label: 'Jurnal', description: 'Riwayat transaksi harian', href: '/today-transactions', color: 'text-purple-600', bg: 'bg-purple-50' },
   { icon: Banknote, label: 'Keuangan', description: 'Manajemen omzet & kantin', href: '/settlement', color: 'text-emerald-600', bg: 'bg-emerald-50' },
+  { icon: ShoppingBag, label: 'Jastip', description: 'Katalog & pesanan santri', href: '/jastip', color: 'text-pink-600', bg: 'bg-pink-50' },
   { icon: FileText, label: 'Laporan', description: 'Rekap tabungan & ekspor PDF', href: '/reports', color: 'text-blue-600', bg: 'bg-blue-50' },
   { icon: QrCode, label: 'Cetak', description: 'Desain & cetak kartu QR', href: '/print-cards', color: 'text-rose-600', bg: 'bg-rose-50' },
   { icon: MonitorSmartphone, label: 'ATM', description: 'Tampilan Kiosk ATM siswa', href: '/kiosk', color: 'text-indigo-600', bg: 'bg-indigo-50' },

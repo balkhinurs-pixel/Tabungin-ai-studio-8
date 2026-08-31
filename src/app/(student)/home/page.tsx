@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase';
 import type { Student, Transaction } from '@/types';
+import Link from 'next/link';
 import { 
     Loader2, 
     ArrowUpCircle, 
@@ -23,7 +24,6 @@ import {
     ChevronRight,
     Sparkles
 } from 'lucide-react';
-import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { format, parseISO } from 'date-fns';
@@ -53,7 +53,6 @@ const TransactionRow = ({ tx }: { tx: Transaction }) => {
         switch (tx.category) {
             case 'BIAYA_ADMIN': return <ShieldEllipsis className="h-5 w-5 text-indigo-600" />;
             case 'BELANJA_KANTIN': return <UtensilsCrossed className="h-5 w-5 text-orange-600" />;
-            case 'BELANJA_JASTIP': return <ShoppingBag className="h-5 w-5 text-pink-600" />;
             case 'TARIK_TUNAI': return <MonitorSmartphone className="h-5 w-5 text-blue-600" />;
             default: return <ArrowDownCircle className="h-5 w-5 text-red-600" />;
         }
@@ -64,7 +63,6 @@ const TransactionRow = ({ tx }: { tx: Transaction }) => {
         switch (tx.category) {
             case 'BIAYA_ADMIN': return "bg-indigo-50";
             case 'BELANJA_KANTIN': return "bg-orange-50";
-            case 'BELANJA_JASTIP': return "bg-pink-50";
             case 'TARIK_TUNAI': return "bg-blue-50";
             default: return "bg-red-50";
         }
@@ -95,9 +93,6 @@ const TransactionRow = ({ tx }: { tx: Transaction }) => {
                 </p>
                 {tx.category === 'BIAYA_ADMIN' && (
                     <span className="text-[7px] font-black bg-indigo-100 text-indigo-700 px-1 rounded">OFFICIAL</span>
-                )}
-                {tx.category === 'BELANJA_JASTIP' && (
-                    <span className="text-[7px] font-black bg-pink-100 text-pink-700 px-1 rounded">JASTIP</span>
                 )}
             </div>
         </div>
@@ -294,28 +289,23 @@ export default function StudentDashboardPage() {
                 </div>
             </div>
 
-            {/* Jastip & Toko Santri Banner Button */}
-            <Link href="/home/jastip" className="block group">
-                <div className="p-5 rounded-[2.2rem] bg-gradient-to-r from-pink-500 via-rose-500 to-pink-600 text-white shadow-lg shadow-pink-100/80 flex items-center justify-between transition-all duration-300 group-hover:shadow-xl group-hover:scale-[1.01] active:scale-[0.99] border-2 border-white/20 relative overflow-hidden">
-                    <div className="absolute right-0 top-0 w-32 h-32 bg-white/10 rounded-full translate-x-8 -translate-y-8 pointer-events-none" />
-                    <div className="flex items-center gap-3.5 relative z-10">
-                        <div className="h-12 w-12 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center border border-white/20">
+            {/* Banner Jastip & Toko Santri */}
+            <Link href="/home/jastip" className="block px-1 group">
+                <div className="p-4 rounded-3xl bg-gradient-to-r from-pink-600 to-rose-600 text-white shadow-lg shadow-pink-100 flex items-center justify-between transition-transform duration-200 group-hover:scale-[1.01] group-active:scale-[0.99]">
+                    <div className="flex items-center gap-3.5">
+                        <div className="h-11 w-11 rounded-2xl bg-white/20 flex items-center justify-center backdrop-blur-xs">
                             <ShoppingBag className="h-6 w-6 text-white" />
                         </div>
                         <div>
-                            <div className="flex items-center gap-2">
-                                <p className="font-black text-base text-white tracking-tight">Jastip & Toko Santri</p>
-                                <span className="text-[8px] font-black uppercase tracking-wider bg-white text-pink-600 px-1.5 py-0.5 rounded-full shadow-xs">
-                                    SHOP
-                                </span>
+                            <div className="flex items-center gap-1.5">
+                                <h3 className="font-black text-sm text-white">Jastip & Toko Santri</h3>
+                                <span className="px-1.5 py-0.5 rounded-full bg-white/20 text-[8px] font-black tracking-widest uppercase">BARU</span>
                             </div>
-                            <p className="text-[11px] text-pink-100 font-semibold mt-0.5">
-                                Titip sabun, snack, buku, laundry & potong saldo
-                            </p>
+                            <p className="text-[11px] text-white/80 font-medium">Beli snack, sabun & kebutuhan santri langsung via saldo</p>
                         </div>
                     </div>
-                    <div className="h-9 w-9 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center text-white shrink-0 group-hover:translate-x-0.5 transition-transform">
-                        <ChevronRight className="h-5 w-5" />
+                    <div className="h-8 w-8 rounded-full bg-white/15 flex items-center justify-center">
+                        <ChevronRight className="h-4 w-4 text-white" />
                     </div>
                 </div>
             </Link>
