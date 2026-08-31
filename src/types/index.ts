@@ -7,7 +7,7 @@ export interface Transaction {
   amount: number;
   student_id: string; 
   user_id?: string;
-  category: 'TABUNGAN' | 'BELANJA_KANTIN' | 'TARIK_TUNAI' | 'BIAYA_ADMIN';
+  category: 'TABUNGAN' | 'BELANJA_KANTIN' | 'TARIK_TUNAI' | 'BIAYA_ADMIN' | 'BELANJA_JASTIP';
   is_settled: boolean;
   // Joined properties
   students?: {
@@ -39,4 +39,45 @@ export interface Profile {
   school_code?: string | null;
   custom_quota?: number | null;
   admin_fee?: number | null;
+  default_jastip_whatsapp?: string | null;
+}
+
+export interface JastipItem {
+  id: string;
+  user_id?: string;
+  name: string;
+  category: string;
+  price: number;
+  description?: string | null;
+  whatsapp_number?: string | null;
+  is_available: boolean;
+  image_url?: string | null;
+  created_at?: string;
+}
+
+export interface JastipOrderItem {
+  id: string;
+  name: string;
+  price: number;
+  quantity: number;
+  subtotal: number;
+}
+
+export interface JastipOrder {
+  id: string;
+  student_id: string;
+  user_id?: string;
+  items: JastipOrderItem[];
+  total_amount: number;
+  status: 'PENDING' | 'DIPROSES' | 'SELESAI' | 'DIBATALKAN';
+  payment_method: 'SALDO' | 'WHATSAPP';
+  notes?: string | null;
+  created_at?: string;
+  students?: {
+    id: string;
+    name: string;
+    class: string;
+    nis: string;
+    whatsapp_number?: string | null;
+  };
 }

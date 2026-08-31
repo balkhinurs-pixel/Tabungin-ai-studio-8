@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Save, DatabaseZap, Loader2, Info } from 'lucide-react';
+import { Save, DatabaseZap, Loader2, Info, ShoppingBag } from 'lucide-react';
 import { createClient } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
 import type { Profile } from '@/types';
@@ -116,6 +116,16 @@ export default function SettingsPage() {
                     <p className="text-[10px] text-muted-foreground italic">Gunakan huruf kecil dan angka saja tanpa spasi.</p>
                     </div>
                     
+                    <Alert className="bg-pink-50 border-pink-100 text-pink-900">
+                        <ShoppingBag className="h-4 w-4 text-pink-600" />
+                        <AlertDescription className="text-xs flex items-center justify-between">
+                            <span>Manajemen Menu & Pesanan <strong>Jastip Santri</strong> tersedia di menu Jastip.</span>
+                            <Button size="sm" variant="link" className="text-pink-700 font-bold p-0 h-auto" asChild>
+                                <a href="/jastip">Buka Jastip &rarr;</a>
+                            </Button>
+                        </AlertDescription>
+                    </Alert>
+
                     <Alert className="bg-blue-50 border-blue-100 text-blue-800">
                         <Info className="h-4 w-4 text-blue-700" />
                         <AlertDescription className="text-xs">

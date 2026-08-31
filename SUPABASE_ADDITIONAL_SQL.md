@@ -53,8 +53,59 @@ USING (
 );
 
 -- ==========================================================
--- 5. SINKRONISASI DATA LAMA (OPSIONAL)
+-- 6. TABEL DAN IZIN JASTIP / TOKO SANTRI
 -- ==========================================================
-UPDATE public.transactions SET category = 'TABUNGAN' WHERE category IS NULL;
-UPDATE public.transactions SET is_settled = FALSE WHERE is_settled IS NULL;
+CREATE TABLE IF NOT EXISTS public.jastip_items (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    category TEXT DEFAULT 'Kebutuhan Santri',
+    price NUMERIC NOT NULL DEFAULT 0,
+    description TEXT,
+    whatsapp_number TEXT,
+    is_available BOOLEAN DEFAULT true,
+    image_url TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS public.jastip_orders (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    student_id UUID REFERENCES public.students(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+    items JSONB NOT NULL DEFAULT '[]'::jsonb,
+    total_amount NUMERIC NOT NULL DEFAULT 0,
+    status TEXT DEFAULT 'PENDING',
+    payment_method TEXT DEFAULT 'SALDO',
+    notes TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS default_jastip_whatsapp TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_jastip_items_user_id ON public.jastip_items(user_id);
+CREATE INDEX IF NOT EXISTS idx_jastip_orders_student_id ON public.jastip_orders(student_id);
+CREATE INDEX IF NOT EXISTS idx_jastip_orders_user_id ON public.jastip_orders(user_id);
+
+ALTER TABLE public.jastip_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.jastip_orders ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Jastip items readable by authenticated users" ON public.jastip_items;
+CREATE POLICY "Jastip items readable by authenticated users"
+ON public.jastip_items FOR SELECT TO authenticated USING (true);
+
+DROP POLICY IF EXISTS "Teachers manage their own jastip items" ON public.jastip_items;
+CREATE POLICY "Teachers manage their own jastip items"
+ON public.jastip_items FOR ALL TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Students can view their own jastip orders" ON public.jastip_orders;
+CREATE POLICY "Students can view their own jastip orders"
+ON public.jastip_orders FOR SELECT TO authenticated USING (auth.uid() = student_id);
+
+DROP POLICY IF EXISTS "Students can insert their jastip orders" ON public.jastip_orders;
+CREATE POLICY "Students can insert their jastip orders"
+ON public.jastip_orders FOR INSERT TO authenticated WITH CHECK (auth.uid() = student_id);
+
+DROP POLICY IF EXISTS "Teachers can view and manage their school jastip orders" ON public.jastip_orders;
+CREATE POLICY "Teachers can view and manage their school jastip orders"
+ON public.jastip_orders FOR ALL TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 ```

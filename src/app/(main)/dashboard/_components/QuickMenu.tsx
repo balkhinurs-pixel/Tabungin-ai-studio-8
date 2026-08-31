@@ -11,6 +11,7 @@ import {
   FileText, 
   Settings, 
   MonitorSmartphone,
+  ShoppingBag,
   LucideIcon
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -26,6 +27,7 @@ interface MenuItem {
 
 const ALL_MENUS: MenuItem[] = [
   { icon: Users, label: 'Siswa', description: 'Kelola data profil siswa', href: '/profiles', color: 'text-blue-600', bg: 'bg-blue-50' },
+  { icon: ShoppingBag, label: 'Jastip', description: 'Kelola toko & pesanan jastip', href: '/jastip', color: 'text-pink-600', bg: 'bg-pink-50' },
   { icon: QrCode, label: 'Scan', description: 'Pindai kartu transaksi', href: '/transactions', color: 'text-orange-600', bg: 'bg-orange-50' },
   { icon: History, label: 'Jurnal', description: 'Riwayat transaksi harian', href: '/today-transactions', color: 'text-purple-600', bg: 'bg-purple-50' },
   { icon: Banknote, label: 'Keuangan', description: 'Manajemen omzet & kantin', href: '/settlement', color: 'text-emerald-600', bg: 'bg-emerald-50' },
