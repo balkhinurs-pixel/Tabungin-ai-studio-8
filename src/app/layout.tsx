@@ -15,6 +15,7 @@ const APP_DESCRIPTION = "Solusi digital cerdas untuk pengelolaan tabungan siswa.
 const APP_URL = process.env.NEXT_PUBLIC_VERCEL_URL ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}` : 'https://tabungin.com';
 
 export const metadata: Metadata = {
+  metadataBase: new URL(APP_URL),
   applicationName: APP_NAME,
   title: {
     default: APP_DEFAULT_TITLE,

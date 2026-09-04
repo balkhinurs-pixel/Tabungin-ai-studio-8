@@ -206,7 +206,7 @@ export default function StudentDashboardPage() {
 
     const todayStart = new Date(); todayStart.setHours(0,0,0,0);
     const todaySpending = (student.transactions || [])
-        .filter(tx => tx.type === 'Pengeluaran' && new Date(tx.created_at!) >= todayStart)
+        .filter(tx => tx.type === 'Pengeluaran' && (tx.category === 'BELANJA_KANTIN' || tx.category === 'TARIK_TUNAI') && new Date(tx.created_at!) >= todayStart)
         .reduce((sum, tx) => sum + tx.amount, 0);
 
     return (
@@ -225,22 +225,25 @@ export default function StudentDashboardPage() {
                     </DialogTrigger>
                     <DialogContent className="rounded-[2.5rem] max-sm:w-[95%]">
                         <DialogHeader>
-                            <DialogTitle className="font-black uppercase tracking-tight">Privasi & Keamanan</DialogTitle>
+                            <DialogTitle className="font-black uppercase tracking-tight">Privasi & Batas Uang Saku</DialogTitle>
                         </DialogHeader>
                         <div className="space-y-5 py-4">
                             <div className="space-y-2">
-                                <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Limit Jajan Harian</Label>
+                                <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Limit Uang Saku Harian (Kantin & Kios)</Label>
                                 <div className="relative">
                                     <Ban className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                                     <Input 
                                         type="text" 
                                         inputMode="numeric"
-                                        placeholder="Tanpa Batas" 
+                                        placeholder="Tanpa Batas (Bebas)" 
                                         className="pl-10 h-12 rounded-xl font-bold"
                                         value={dailyLimit}
                                         onChange={(e) => setDailyLimit(e.target.value.replace(/\D/g, ''))}
                                     />
                                 </div>
+                                <p className="text-[10px] text-muted-foreground italic">
+                                    *Membatasi belanja di Kantin & tarik tunai Kios ATM. Pesanan Jastip & penarikan oleh Guru/Admin tetap menggunakan Dana Bebas Tabungan.
+                                </p>
                             </div>
                             <Separator />
                             <div className="space-y-2">
@@ -276,12 +279,12 @@ export default function StudentDashboardPage() {
                         </div>
                     </div>
                     <div className="mt-auto">
-                        <p className="text-[10px] text-white/50 font-black uppercase tracking-[0.2em] mb-1">Saldo Tersedia</p>
+                        <p className="text-[10px] text-white/70 font-black uppercase tracking-[0.2em] mb-1">Saldo Tabungan (Dana Bebas)</p>
                         <p className="text-4xl font-black tracking-tighter drop-shadow-lg">{formatCurrency(balance)}</p>
-                        <div className="mt-6 flex items-center justify-between bg-black/10 rounded-2xl p-3 border border-white/5">
-                            <p className="text-[9px] font-black uppercase tracking-widest text-white/60">Pemakaian Hari Ini:</p>
+                        <div className="mt-4 flex items-center justify-between bg-black/15 rounded-2xl p-3 border border-white/10">
+                            <p className="text-[9px] font-black uppercase tracking-widest text-white/70">Uang Saku Kantin/Kios Hari Ini:</p>
                             <p className="text-[10px] font-black">
-                                {student.daily_limit ? `${formatCurrency(todaySpending)} / ${formatCurrency(student.daily_limit)}` : 'TIDAK TERBATAS'}
+                                {student.daily_limit ? `${formatCurrency(todaySpending)} / ${formatCurrency(student.daily_limit)}` : 'TIDAK DIBATASI'}
                             </p>
                         </div>
                     </div>

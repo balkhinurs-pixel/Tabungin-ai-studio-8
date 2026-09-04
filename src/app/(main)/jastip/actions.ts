@@ -36,6 +36,82 @@ export async function getAdminJastipItemsAction(): Promise<JastipItem[]> {
   }
 }
 
+export async function uploadJastipImageAction(formData: FormData): Promise<{ success: boolean; url?: string; message: string }> {
+  try {
+    const supabase = await createClient();
+    const supabaseAdmin = getSupabaseAdmin();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      return { success: false, message: 'Sesi berakhir, silakan login kembali.' };
+    }
+
+    const file = formData.get('file') as File | null;
+    if (!file) {
+      return { success: false, message: 'Tidak ada file foto yang dipilih.' };
+    }
+
+    // Validate size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      return { success: false, message: 'Ukuran foto maksimal 5MB.' };
+    }
+
+    // Validate mime type
+    const validMimeTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
+    if (!validMimeTypes.includes(file.type)) {
+      return { success: false, message: 'Format file tidak didukung. Harap gunakan file JPG, PNG, WEBP, atau GIF.' };
+    }
+
+    const bucketName = 'jastip-items';
+
+    // Ensure bucket exists in Supabase Storage
+    try {
+      const { data: buckets } = await supabaseAdmin.storage.listBuckets();
+      const bucketExists = buckets?.some(b => b.name === bucketName);
+      if (!bucketExists) {
+        await supabaseAdmin.storage.createBucket(bucketName, {
+          public: true,
+          fileSizeLimit: 5242880,
+          allowedMimeTypes: validMimeTypes
+        });
+      }
+    } catch (bucketErr) {
+      console.warn('[STORAGE_BUCKET_CHECK_WARN]', bucketErr);
+    }
+
+    const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+    const cleanFileName = `${user.id}/${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${ext}`;
+
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    const { error: uploadError } = await supabaseAdmin.storage
+      .from(bucketName)
+      .upload(cleanFileName, buffer, {
+        contentType: file.type,
+        upsert: true
+      });
+
+    if (uploadError) {
+      console.error('[UPLOAD_JASTIP_IMAGE_ERROR]', uploadError);
+      return { success: false, message: uploadError.message || 'Gagal mengunggah foto ke Supabase Storage.' };
+    }
+
+    const { data: publicUrlData } = supabaseAdmin.storage
+      .from(bucketName)
+      .getPublicUrl(cleanFileName);
+
+    return {
+      success: true,
+      url: publicUrlData.publicUrl,
+      message: 'Foto berhasil diunggah ke Supabase Storage.'
+    };
+  } catch (err: any) {
+    console.error('[UPLOAD_JASTIP_IMAGE_ACTION_ERROR]', err);
+    return { success: false, message: err.message || 'Terjadi kesalahan saat mengunggah foto.' };
+  }
+}
+
 export async function saveJastipItemAction(itemData: Partial<JastipItem>): Promise<{ success: boolean; message: string }> {
   try {
     const supabase = await createClient();
@@ -48,16 +124,22 @@ export async function saveJastipItemAction(itemData: Partial<JastipItem>): Promi
 
     if (itemData.id) {
       // Update existing item
+      const updatePayload: Record<string, any> = {
+        name: itemData.name,
+        category: itemData.category || 'Kebutuhan Santri',
+        price: itemData.price,
+        description: itemData.description || null,
+        whatsapp_number: itemData.whatsapp_number ? itemData.whatsapp_number.replace(/\D/g, '') : null,
+        is_available: itemData.is_available ?? true,
+      };
+
+      if (itemData.image_url !== undefined) {
+        updatePayload.image_url = itemData.image_url || null;
+      }
+
       const { error } = await supabaseAdmin
         .from('jastip_items')
-        .update({
-          name: itemData.name,
-          category: itemData.category || 'Kebutuhan Santri',
-          price: itemData.price,
-          description: itemData.description || null,
-          whatsapp_number: itemData.whatsapp_number ? itemData.whatsapp_number.replace(/\D/g, '') : null,
-          is_available: itemData.is_available ?? true,
-        })
+        .update(updatePayload)
         .eq('id', itemData.id)
         .eq('user_id', user.id);
 
@@ -76,6 +158,7 @@ export async function saveJastipItemAction(itemData: Partial<JastipItem>): Promi
         description: itemData.description || null,
         whatsapp_number: itemData.whatsapp_number ? itemData.whatsapp_number.replace(/\D/g, '') : null,
         is_available: itemData.is_available ?? true,
+        image_url: itemData.image_url || null,
       };
 
       const { error } = await supabaseAdmin
@@ -437,7 +520,7 @@ export async function getStudentJastipCatalogAction(): Promise<{
 }
 
 export async function createStudentJastipOrderAction(payload: {
-  items: { id: string; name: string; price: number; quantity: number }[];
+  items: { id: string; name: string; price: number; quantity: number; image_url?: string | null }[];
   notes?: string;
   paymentMethod: 'SALDO' | 'WHATSAPP';
 }): Promise<{
@@ -493,7 +576,8 @@ export async function createStudentJastipOrderAction(payload: {
       name: it.name,
       price: it.price,
       quantity: it.quantity,
-      subtotal: it.price * it.quantity
+      subtotal: it.price * it.quantity,
+      image_url: it.image_url || null
     }));
 
     const totalAmount = orderItems.reduce((sum, it) => sum + it.subtotal, 0);
@@ -529,22 +613,8 @@ export async function createStudentJastipOrderAction(payload: {
         };
       }
 
-      // Check daily limit
-      if (studentRecord.daily_limit && studentRecord.daily_limit > 0) {
-        const todayStr = new Date().toISOString().split('T')[0];
-        const todaySpent = txs
-          .filter((t: any) => t.type === 'Pengeluaran' && t.created_at?.startsWith(todayStr))
-          .reduce((acc: number, t: any) => acc + Number(t.amount), 0);
-
-        if (todaySpent + totalAmount > studentRecord.daily_limit) {
-          return {
-            success: false,
-            message: `Transaksi melebihi batas belanja harian santri (Limit: Rp ${studentRecord.daily_limit.toLocaleString('id-ID')})`
-          };
-        }
-      }
-
-      // Insert Transaction Record (Use standard valid category TABUNGAN with descriptive Jastip text)
+      // Jastip menggunakan Dana Bebas Tabungan (tidak dibatasi oleh kuota limit uang saku harian kantin/kios)
+      // Insert Transaction Record (Gunakan kategori TABUNGAN agar tidak mengurangi jatah uang saku harian kantin/kios)
       const summaryStr = orderItems.map(i => `${i.name} (${i.quantity}x)`).join(', ');
       const { error: txError } = await supabaseAdmin.from('transactions').insert([
         {

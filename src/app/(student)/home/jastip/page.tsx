@@ -55,6 +55,7 @@ interface CartItem {
   name: string;
   price: number;
   quantity: number;
+  image_url?: string | null;
 }
 
 export default function StudentJastipShopPage() {
@@ -125,7 +126,11 @@ export default function StudentJastipShopPage() {
       if (existing) {
         return {
           ...prev,
-          [item.id]: { ...existing, quantity: existing.quantity + 1 }
+          [item.id]: { 
+            ...existing, 
+            quantity: existing.quantity + 1,
+            image_url: item.image_url || existing.image_url || null 
+          }
         };
       }
       return {
@@ -134,7 +139,8 @@ export default function StudentJastipShopPage() {
           id: item.id,
           name: item.name,
           price: item.price,
-          quantity: 1
+          quantity: 1,
+          image_url: item.image_url || null
         }
       };
     });
@@ -182,17 +188,6 @@ export default function StudentJastipShopPage() {
           variant: 'destructive'
         });
         return;
-      }
-
-      if (studentInfo.daily_limit && studentInfo.daily_limit > 0) {
-        if (studentInfo.today_spending + totalCartPrice > studentInfo.daily_limit) {
-          toast({
-            title: 'Melebihi Limit Harian',
-            description: 'Total transaksi melebihi batas jajan harian santri yang ditentukan.',
-            variant: 'destructive'
-          });
-          return;
-        }
       }
     }
 
@@ -358,15 +353,49 @@ export default function StudentJastipShopPage() {
 
                 return (
                   <Card key={item.id} className={cn(
-                    "rounded-3xl border transition-all duration-200 overflow-hidden bg-white shadow-xs",
+                    "rounded-3xl border transition-all duration-200 overflow-hidden bg-white shadow-xs flex flex-col justify-between group",
                     !isAvailable && "opacity-60 bg-gray-50/80"
                   )}>
-                    <CardContent className="p-4 flex flex-col justify-between h-full space-y-3">
-                      <div>
-                        <div className="flex items-center justify-between gap-1 mb-1.5">
-                          <span className="text-[9px] font-black uppercase tracking-wider text-pink-600 bg-pink-50 px-2 py-0.5 rounded-md">
+                    {/* Photo Header */}
+                    {item.image_url ? (
+                      <div className="relative w-full h-36 sm:h-40 bg-gray-100 overflow-hidden">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={item.image_url}
+                          alt={item.name}
+                          className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                        />
+                        <div className="absolute top-2 left-2">
+                          <span className="text-[9px] font-black uppercase tracking-wider text-pink-700 bg-white/95 backdrop-blur-xs px-2 py-0.5 rounded-md shadow-2xs border border-white/60">
                             {item.category}
                           </span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="w-full h-20 bg-gradient-to-br from-pink-50/90 to-pink-100/40 flex items-center justify-between px-3.5 border-b border-pink-100/40 text-pink-400">
+                        <div className="flex items-center gap-1.5">
+                          <div className="h-7 w-7 rounded-lg bg-white/90 text-pink-500 flex items-center justify-center shadow-2xs">
+                            <ShoppingBag className="h-3.5 w-3.5" />
+                          </div>
+                          <span className="text-[9px] font-black uppercase tracking-wider text-pink-700 bg-white/90 px-1.5 py-0.5 rounded">
+                            {item.category}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    <CardContent className="p-3.5 sm:p-4 flex flex-col justify-between flex-1 space-y-3">
+                      <div>
+                        <div className="flex items-center justify-between gap-1 mb-1.5">
+                          {!item.image_url ? (
+                            <span className="text-[9px] font-black uppercase tracking-wider text-pink-600 bg-pink-50 px-2 py-0.5 rounded-md">
+                              {item.category}
+                            </span>
+                          ) : (
+                            <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">
+                              Kebutuhan Santri
+                            </span>
+                          )}
                           {!isAvailable && (
                             <span className="text-[9px] font-black text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded">
                               Habis
@@ -549,10 +578,24 @@ export default function StudentJastipShopPage() {
             {/* List of Cart Items */}
             <div className="divide-y divide-gray-100 max-h-48 overflow-y-auto pr-1">
               {cartItemsList.map(item => (
-                <div key={item.id} className="py-2.5 flex items-center justify-between gap-2">
-                  <div className="flex-1">
-                    <p className="font-bold text-xs text-gray-900">{item.name}</p>
-                    <p className="text-[10px] text-gray-400 font-semibold">{formatRupiah(item.price)} per item</p>
+                <div key={item.id} className="py-2.5 flex items-center justify-between gap-2.5">
+                  <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                    {item.image_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={item.image_url}
+                        alt={item.name}
+                        className="h-10 w-10 rounded-xl object-cover bg-gray-100 shrink-0 border border-gray-100"
+                      />
+                    ) : (
+                      <div className="h-10 w-10 rounded-xl bg-pink-50 text-pink-600 flex items-center justify-center shrink-0 border border-pink-100">
+                        <ShoppingBag className="h-4 w-4" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-xs text-gray-900 truncate">{item.name}</p>
+                      <p className="text-[10px] text-gray-400 font-semibold">{formatRupiah(item.price)} per item</p>
+                    </div>
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="flex items-center bg-gray-100 rounded-xl p-0.5">
@@ -621,11 +664,17 @@ export default function StudentJastipShopPage() {
                   </div>
                   <div className="flex-1">
                     <div className="flex items-center justify-between">
-                      <p className="font-black text-xs text-gray-900">Potong Saldo Tabungan</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="font-black text-xs text-gray-900">Potong Saldo Tabungan</p>
+                        <span className="text-[8px] font-black uppercase tracking-wider bg-pink-100 text-pink-700 px-1.5 py-0.5 rounded">Dana Bebas</span>
+                      </div>
                       {paymentMethod === 'SALDO' && <Check className="h-4 w-4 text-pink-600" />}
                     </div>
                     <p className="text-[11px] text-gray-500 font-medium mt-0.5">
                       Saldo Anda: <strong>{formatRupiah(studentInfo?.balance || 0)}</strong>
+                    </p>
+                    <p className="text-[10px] text-gray-400 font-medium italic mt-0.5">
+                      *Jastip menggunakan Dana Bebas (tidak memotong kuota uang saku kantin/kios).
                     </p>
                     {studentInfo && studentInfo.balance < totalCartPrice && (
                       <p className="text-[10px] font-bold text-rose-600 mt-0.5">

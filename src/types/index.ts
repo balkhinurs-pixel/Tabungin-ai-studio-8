@@ -28,6 +28,7 @@ export interface JastipItem {
   description?: string | null;
   whatsapp_number?: string | null;
   is_available: boolean;
+  image_url?: string | null;
   user_id?: string;
 }
 
@@ -37,6 +38,7 @@ export interface JastipOrderItem {
   price: number;
   quantity: number;
   subtotal: number;
+  image_url?: string | null;
 }
 
 export interface JastipOrder {

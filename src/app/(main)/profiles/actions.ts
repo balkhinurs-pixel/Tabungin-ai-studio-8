@@ -57,6 +57,8 @@ export async function addStudentAction(
   // Gunakan fallback 123456 jika PIN kosong
   const newPin = (formData.get('pin') as string) || '123456';
   const newWhatsappNumber = formData.get('whatsapp_number') as string | null;
+  const rawDailyLimit = formData.get('daily_limit') as string | null;
+  const daily_limit = rawDailyLimit && rawDailyLimit.trim() !== '' ? parseInt(rawDailyLimit.replace(/\D/g, '')) : null;
 
   if (!newNis || !newName || !newStudentClass) {
     return { success: false, message: 'Data tidak lengkap. Mohon isi NIS, Nama, dan Kelas.' };
@@ -94,6 +96,7 @@ export async function addStudentAction(
       class: newStudentClass,
       user_id: user.id, // The admin/teacher user_id who created the student
       whatsapp_number: newWhatsappNumber,
+      daily_limit: daily_limit || null
     })
     .select()
     .single();
@@ -218,6 +221,8 @@ export async function updateStudentAction(
     const studentClass = formData.get('class') as string;
     const whatsapp_number = formData.get('whatsapp_number') as string | null;
     const pin = formData.get('pin') as string;
+    const rawDailyLimit = formData.get('daily_limit') as string | null;
+    const daily_limit = rawDailyLimit !== null && rawDailyLimit.trim() !== '' ? parseInt(rawDailyLimit.replace(/\D/g, '')) : null;
 
     if (!id || !nis || !name || !studentClass) {
         return { success: false, message: 'Data tidak lengkap. Mohon isi NIS, Nama, dan Kelas.' };
@@ -226,7 +231,7 @@ export async function updateStudentAction(
     // 1. Update the public student profile
     const { data: updatedStudentData, error: updateStudentError } = await supabase
         .from('students')
-        .update({ nis, name, class: studentClass, whatsapp_number })
+        .update({ nis, name, class: studentClass, whatsapp_number, daily_limit })
         .eq('id', id)
         .select()
         .single();

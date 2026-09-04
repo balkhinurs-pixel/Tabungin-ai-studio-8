@@ -96,6 +96,12 @@ export default async function StudentProfilePage({ params }: StudentProfilePageP
     },
     { income: 0, expense: 0, balance: 0 }
   );
+
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayPocketSpent = (student.transactions || [])
+    .filter(tx => tx.type === 'Pengeluaran' && (tx.category === 'BELANJA_KANTIN' || tx.category === 'TARIK_TUNAI') && new Date(tx.created_at!) >= todayStart)
+    .reduce((sum, tx) => sum + tx.amount, 0);
   
   return (
     <div className="space-y-6 pb-24 max-w-md mx-auto">
@@ -134,7 +140,7 @@ export default async function StudentProfilePage({ params }: StudentProfilePageP
 
           <div className="mt-auto">
             <div className="flex items-center gap-2 mb-1">
-                <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-70">Saldo Tabungan</p>
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-70">Saldo Tabungan (Dana Bebas)</p>
                 <div className="h-px flex-1 bg-white/20" />
             </div>
             <p className="text-4xl font-black tracking-tighter drop-shadow-md">
@@ -151,6 +157,24 @@ export default async function StudentProfilePage({ params }: StudentProfilePageP
           </div>
         </CardContent>
       </Card>
+
+      {/* Pocket Money Limit Info Card */}
+      <div className="p-3.5 bg-amber-50/70 border border-amber-200/80 rounded-2xl flex items-center justify-between gap-3 text-xs">
+        <div className="flex items-center gap-2.5">
+          <div className="h-8 w-8 rounded-xl bg-amber-500/10 text-amber-700 flex items-center justify-center shrink-0">
+            <CreditCard className="h-4 w-4" />
+          </div>
+          <div>
+            <p className="font-bold text-amber-950 text-[11px]">Batas Uang Saku Kantin & Kios</p>
+            <p className="text-[10px] text-amber-800 font-medium">
+              {student.daily_limit ? `Limit: Rp ${student.daily_limit.toLocaleString('id-ID')}/hari (Terpakai: Rp ${todayPocketSpent.toLocaleString('id-ID')})` : 'Bebas / Tanpa Batas Harian'}
+            </p>
+          </div>
+        </div>
+        <span className="text-[9px] font-bold uppercase tracking-wider bg-amber-200/60 text-amber-800 px-2 py-1 rounded-lg shrink-0">
+          {student.daily_limit ? 'Dibatasi' : 'Bebas'}
+        </span>
+      </div>
       
       {/* Secondary Stats */}
       <div className="grid grid-cols-2 gap-4">

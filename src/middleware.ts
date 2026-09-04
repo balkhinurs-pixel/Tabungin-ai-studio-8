@@ -100,8 +100,8 @@ export async function middleware(request: NextRequest) {
     // C. Alur Guru (TEACHER) & Admin Pusat (ADMIN)
     if (!pathname.startsWith('/_next') && !pathname.includes('.')) {
         if (profile) {
-          const isActuallyTeacher = profile.role === 'TEACHER' || (profile.school_code && profile.role !== 'CANTINE' && profile.role !== 'STUDENT' && profile.role !== 'ADMIN');
           const isActuallyAdmin = profile.role === 'ADMIN' && !profile.school_code;
+          const isActuallyTeacher = Boolean(profile.school_code && profile.role !== 'CANTINE' && profile.role !== 'STUDENT') || profile.role === 'TEACHER';
 
           if (isActuallyAdmin) {
               if (isAuthRoute || pathname === '/dashboard') {
@@ -110,7 +110,7 @@ export async function middleware(request: NextRequest) {
               return response;
           }
 
-          if (isActuallyTeacher) {
+          if (isActuallyTeacher && profile.school_code) {
               if (isAuthRoute || pathname === '/welcome' || pathname.startsWith('/admin')) {
                   return NextResponse.redirect(new URL('/dashboard', request.url));
               }

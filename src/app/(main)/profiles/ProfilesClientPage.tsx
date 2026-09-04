@@ -72,6 +72,7 @@ const EditStudentDialog = ({
     const [name, setName] = useState(student?.name || '');
     const [studentClass, setStudentClass] = useState(student?.class || '');
     const [whatsappNumber, setWhatsappNumber] = useState(student?.whatsapp_number || '');
+    const [dailyLimit, setDailyLimit] = useState(student?.daily_limit ? String(student.daily_limit) : '');
     const [pin, setPin] = useState('');
     const [open, setOpen] = useState(false);
     const [loading, setLoading] = useState(false);
@@ -85,6 +86,7 @@ const EditStudentDialog = ({
             setName(student.name);
             setStudentClass(student.class);
             setWhatsappNumber(student.whatsapp_number || '');
+            setDailyLimit(student.daily_limit ? String(student.daily_limit) : '');
             setPin('');
             setShowArchiveConfirm(false);
         }
@@ -176,6 +178,20 @@ const EditStudentDialog = ({
                     <div className="space-y-2">
                         <Label htmlFor="edit-whatsapp">Nomor WhatsApp Wali (Opsional)</Label>
                         <Input id="edit-whatsapp" name="whatsapp_number" value={whatsappNumber} onChange={(e) => setWhatsappNumber(e.target.value)} placeholder="Contoh: 6281234567890" />
+                    </div>
+                    <div className="space-y-2">
+                        <Label htmlFor="edit-daily-limit">Limit Uang Saku Harian (Kantin & Kios ATM)</Label>
+                        <Input 
+                            id="edit-daily-limit" 
+                            name="daily_limit" 
+                            value={dailyLimit} 
+                            onChange={(e) => setDailyLimit(e.target.value.replace(/\D/g, ''))} 
+                            placeholder="Contoh: 20000 (Kosongkan jika tanpa batas)" 
+                            inputMode="numeric"
+                        />
+                        <p className="text-[10px] text-muted-foreground italic">
+                            *Membatasi transaksi di Kantin & Kios ATM. Penarikan Admin/Guru & Jastip tetap menggunakan Dana Bebas Tabungan.
+                        </p>
                     </div>
                     <div className="space-y-2 pb-2">
                         <div className="flex items-center justify-between">
@@ -650,11 +666,13 @@ export default function ProfilesClientPage({
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [addLoading, setAddLoading] = useState(false);
   const [addPin, setAddPin] = useState('123456');
+  const [addDailyLimit, setAddDailyLimit] = useState('');
 
-  // Efek untuk mereset PIN ke default 123456 setiap kali dialog dibuka
+  // Efek untuk mereset PIN & Limit setiap kali dialog dibuka
   useEffect(() => {
     if (addDialogOpen) {
       setAddPin('123456');
+      setAddDailyLimit('');
     }
   }, [addDialogOpen]);
 
@@ -844,6 +862,20 @@ export default function ProfilesClientPage({
                    <div className="space-y-2">
                       <Label htmlFor="whatsapp">Nomor WhatsApp Wali (Opsional)</Label>
                       <Input id="whatsapp" name="whatsapp_number" placeholder="Contoh: 6281234567890" />
+                  </div>
+                  <div className="space-y-2">
+                      <Label htmlFor="daily_limit">Limit Uang Saku Harian (Kantin & Kios ATM)</Label>
+                      <Input 
+                        id="daily_limit" 
+                        name="daily_limit" 
+                        value={addDailyLimit} 
+                        onChange={(e) => setAddDailyLimit(e.target.value.replace(/\D/g, ''))}
+                        placeholder="Contoh: 20000 (Kosongkan jika tanpa batas)" 
+                        inputMode="numeric"
+                      />
+                      <p className="text-[10px] text-muted-foreground italic">
+                        *Membatasi belanja di Kantin & tarik tunai di Kios ATM. Penarikan Admin/Guru & Jastip tetap menggunakan Dana Bebas Tabungan.
+                      </p>
                   </div>
                   <div className="space-y-2">
                       <Label htmlFor="pin">PIN Awal Siswa (6 Digit Angka)</Label>

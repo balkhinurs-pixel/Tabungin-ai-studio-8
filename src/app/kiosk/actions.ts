@@ -52,6 +52,21 @@ export async function getStudentKioskData(nis: string, schoolCode?: string) {
       return acc + (tx.type === 'Pemasukan' ? tx.amount : -tx.amount);
     }, 0);
 
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    // Hitung pemakaian uang saku hari ini (Kantin + ATM Kios)
+    const todayPocketSpent = (data.transactions || [])
+      .filter((tx: any) => tx.type === 'Pengeluaran' && 
+        (tx.category === 'BELANJA_KANTIN' || tx.category === 'TARIK_TUNAI') && 
+        new Date(tx.created_at) >= todayStart
+      )
+      .reduce((sum: number, tx: any) => sum + tx.amount, 0);
+
+    const remainingDailyLimit = data.daily_limit && data.daily_limit > 0
+      ? Math.max(0, data.daily_limit - todayPocketSpent)
+      : null;
+
     return {
       success: true,
       data: {
@@ -60,6 +75,8 @@ export async function getStudentKioskData(nis: string, schoolCode?: string) {
         class: data.class,
         balance: balance,
         dailyLimit: data.daily_limit,
+        remainingDailyLimit: remainingDailyLimit,
+        todaySpent: todayPocketSpent,
         nis: nis.trim(),
         schoolCode: (data.profiles as any)?.school_code || schoolCode.trim().toLowerCase()
       }
@@ -133,21 +150,24 @@ export async function processKioskWithdrawal(params: {
             return { success: false, message: 'Saldo Anda tidak mencukupi.' };
         }
 
-        // CEK LIMIT HARIAN (SECURITY CHECK)
+        // CEK LIMIT HARIAN UANG SAKU (SECURITY CHECK)
         if (student.daily_limit && student.daily_limit > 0) {
             const todayStart = new Date();
             todayStart.setHours(0,0,0,0);
 
-            // Hitung pengeluaran hari ini (Kantin + ATM)
+            // Hitung pengeluaran uang saku hari ini (Kantin + ATM Kios)
             const todaySpent = (student.transactions || [])
-                .filter((tx: any) => tx.type === 'Pengeluaran' && new Date(tx.created_at) >= todayStart)
+                .filter((tx: any) => tx.type === 'Pengeluaran' && 
+                    (tx.category === 'BELANJA_KANTIN' || tx.category === 'TARIK_TUNAI') && 
+                    new Date(tx.created_at) >= todayStart
+                )
                 .reduce((sum: number, tx: any) => sum + tx.amount, 0);
             
             if (todaySpent + amount > student.daily_limit) {
-                const remaining = student.daily_limit - todaySpent;
+                const remaining = Math.max(0, student.daily_limit - todaySpent);
                 return { 
                     success: false, 
-                    message: `TRANSAKSI DITOLAK. Limit harian Anda terlampaui. Sisa jatah tarik/belanja hari ini: Rp ${remaining > 0 ? remaining.toLocaleString('id-ID') : '0'}` 
+                    message: `PENARIKAN DITOLAK. Limit uang saku harian Anda terlampaui (Batas: Rp ${student.daily_limit.toLocaleString('id-ID')}/hari). Sisa jatah tarik tunai hari ini: Rp ${remaining.toLocaleString('id-ID')}` 
                 };
             }
         }

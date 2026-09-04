@@ -108,4 +108,49 @@ ON public.jastip_orders FOR INSERT TO authenticated WITH CHECK (auth.uid() = stu
 DROP POLICY IF EXISTS "Teachers can view and manage their school jastip orders" ON public.jastip_orders;
 CREATE POLICY "Teachers can view and manage their school jastip orders"
 ON public.jastip_orders FOR ALL TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+-- ==========================================================
+-- 7. PENGATURAN SUPABASE STORAGE & FOTO MENU JASTIP
+-- ==========================================================
+
+-- 7.1. Pastikan kolom image_url ada di public.jastip_items
+ALTER TABLE public.jastip_items 
+ADD COLUMN IF NOT EXISTS image_url TEXT;
+
+-- 7.2. Buat Bucket Storage 'jastip-items' (Public)
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'jastip-items', 
+  'jastip-items', 
+  true, 
+  5242880, -- Maksimal 5 MB per file
+  ARRAY['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif']
+)
+ON CONFLICT (id) DO UPDATE SET 
+  public = true,
+  file_size_limit = 5242880,
+  allowed_mime_types = ARRAY['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
+
+-- 7.3. Izin Akses Baca Publik untuk Gambar Menu Jastip
+DROP POLICY IF EXISTS "Public can view jastip images" ON storage.objects;
+CREATE POLICY "Public can view jastip images"
+ON storage.objects FOR SELECT
+USING ( bucket_id = 'jastip-items' );
+
+-- 7.4. Izin Akses Unggah bagi Pengguna Terautentikasi (Guru / Admin)
+DROP POLICY IF EXISTS "Authenticated users can upload jastip images" ON storage.objects;
+CREATE POLICY "Authenticated users can upload jastip images"
+ON storage.objects FOR INSERT TO authenticated
+WITH CHECK ( bucket_id = 'jastip-items' );
+
+-- 7.5. Izin Akses Perbarui & Hapus Gambar
+DROP POLICY IF EXISTS "Authenticated users can update jastip images" ON storage.objects;
+CREATE POLICY "Authenticated users can update jastip images"
+ON storage.objects FOR UPDATE TO authenticated
+USING ( bucket_id = 'jastip-items' );
+
+DROP POLICY IF EXISTS "Authenticated users can delete jastip images" ON storage.objects;
+CREATE POLICY "Authenticated users can delete jastip images"
+ON storage.objects FOR DELETE TO authenticated
+USING ( bucket_id = 'jastip-items' );
 ```

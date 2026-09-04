@@ -20,7 +20,13 @@ import {
   AlertCircle,
   Filter,
   Check,
-  X
+  X,
+  Image as ImageIcon,
+  UploadCloud,
+  Copy,
+  CheckCheck,
+  Database,
+  ExternalLink
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -58,8 +64,50 @@ import {
   getDefaultJastipConfigAction,
   updateDefaultJastipWhatsAppAction,
   getAdminJastipOrdersAction,
-  updateJastipOrderStatusAction
+  updateJastipOrderStatusAction,
+  uploadJastipImageAction
 } from './actions';
+
+const SUPABASE_STORAGE_SQL = `-- 1. Tambahkan kolom image_url jika belum ada
+ALTER TABLE public.jastip_items 
+ADD COLUMN IF NOT EXISTS image_url TEXT;
+
+-- 2. Buat Bucket Storage 'jastip-items' (Public)
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'jastip-items', 
+  'jastip-items', 
+  true, 
+  5242880, -- Maksimal 5 MB per file
+  ARRAY['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif']
+)
+ON CONFLICT (id) DO UPDATE SET 
+  public = true,
+  file_size_limit = 5242880,
+  allowed_mime_types = ARRAY['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
+
+-- 3. Izin Akses Baca Publik
+DROP POLICY IF EXISTS "Public can view jastip images" ON storage.objects;
+CREATE POLICY "Public can view jastip images"
+ON storage.objects FOR SELECT
+USING ( bucket_id = 'jastip-items' );
+
+-- 4. Izin Akses Unggah bagi Pengguna Terautentikasi (Guru / Admin)
+DROP POLICY IF EXISTS "Authenticated users can upload jastip images" ON storage.objects;
+CREATE POLICY "Authenticated users can upload jastip images"
+ON storage.objects FOR INSERT TO authenticated
+WITH CHECK ( bucket_id = 'jastip-items' );
+
+-- 5. Izin Akses Perbarui & Hapus
+DROP POLICY IF EXISTS "Authenticated users can update jastip images" ON storage.objects;
+CREATE POLICY "Authenticated users can update jastip images"
+ON storage.objects FOR UPDATE TO authenticated
+USING ( bucket_id = 'jastip-items' );
+
+DROP POLICY IF EXISTS "Authenticated users can delete jastip images" ON storage.objects;
+CREATE POLICY "Authenticated users can delete jastip images"
+ON storage.objects FOR DELETE TO authenticated
+USING ( bucket_id = 'jastip-items' );`;
 
 const CATEGORIES = [
   'Kebutuhan Santri',
@@ -95,7 +143,11 @@ export default function JastipManagementPage() {
   const [formDescription, setFormDescription] = useState('');
   const [formWhatsApp, setFormWhatsApp] = useState('');
   const [formIsAvailable, setFormIsAvailable] = useState(true);
+  const [formImageUrl, setFormImageUrl] = useState('');
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [imageUploadMode, setImageUploadMode] = useState<'FILE' | 'URL'>('FILE');
   const [savingItem, setSavingItem] = useState(false);
+  const [copiedSql, setCopiedSql] = useState(false);
 
   // Delete Item State
   const [itemToDelete, setItemToDelete] = useState<JastipItem | null>(null);
@@ -134,6 +186,8 @@ export default function JastipManagementPage() {
     setFormDescription('');
     setFormWhatsApp('');
     setFormIsAvailable(true);
+    setFormImageUrl('');
+    setImageUploadMode('FILE');
     setItemDialogOpen(true);
   };
 
@@ -145,7 +199,44 @@ export default function JastipManagementPage() {
     setFormDescription(item.description || '');
     setFormWhatsApp(item.whatsapp_number || '');
     setFormIsAvailable(item.is_available);
+    setFormImageUrl(item.image_url || '');
+    setImageUploadMode(item.image_url && item.image_url.startsWith('http') && !item.image_url.includes('supabase') ? 'URL' : 'FILE');
     setItemDialogOpen(true);
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast({ title: 'Ukuran Terlalu Besar', description: 'Maksimal ukuran foto adalah 5MB.', variant: 'destructive' });
+      return;
+    }
+
+    setUploadingImage(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await uploadJastipImageAction(formData);
+      if (res.success && res.url) {
+        setFormImageUrl(res.url);
+        toast({ title: 'Foto Terunggah', description: 'Foto menu jastip berhasil diunggah ke Supabase Storage.' });
+      } else {
+        toast({ title: 'Gagal Upload Foto', description: res.message, variant: 'destructive' });
+      }
+    } catch (err: any) {
+      toast({ title: 'Error', description: err.message || 'Gagal mengunggah foto.', variant: 'destructive' });
+    } finally {
+      setUploadingImage(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleCopySql = () => {
+    navigator.clipboard.writeText(SUPABASE_STORAGE_SQL);
+    setCopiedSql(true);
+    toast({ title: 'Skrip SQL Tersalin', description: 'Tempelkan di Supabase SQL Editor lalu klik Run.' });
+    setTimeout(() => setCopiedSql(false), 3000);
   };
 
   const handleSaveItem = async () => {
@@ -167,7 +258,8 @@ export default function JastipManagementPage() {
       price: priceNum,
       description: formDescription,
       whatsapp_number: formWhatsApp,
-      is_available: formIsAvailable
+      is_available: formIsAvailable,
+      image_url: formImageUrl.trim() || null
     });
     setSavingItem(false);
 
@@ -419,15 +511,50 @@ export default function JastipManagementPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-4">
               {filteredItems.map(item => (
                 <Card key={item.id} className={cn(
-                  "rounded-2xl sm:rounded-3xl border transition-all duration-200 overflow-hidden bg-white shadow-2xs hover:shadow-md flex flex-col justify-between",
+                  "rounded-2xl sm:rounded-3xl border transition-all duration-200 overflow-hidden bg-white shadow-2xs hover:shadow-md flex flex-col justify-between group",
                   !item.is_available && "bg-gray-50/70 border-gray-200 opacity-80"
                 )}>
-                  <CardContent className="p-4 sm:p-5 flex flex-col justify-between h-full space-y-3">
-                    <div>
-                      <div className="flex items-center justify-between gap-2 mb-2">
-                        <Badge variant="secondary" className="rounded-lg text-[10px] font-black px-2.5 py-0.5 bg-pink-50 text-pink-700 border border-pink-100">
+                  {/* Photo Header */}
+                  {item.image_url ? (
+                    <div className="relative w-full h-40 sm:h-44 bg-gray-100 overflow-hidden">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={item.image_url}
+                        alt={item.name}
+                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                      />
+                      <div className="absolute top-2.5 left-2.5">
+                        <Badge variant="secondary" className="rounded-lg text-[10px] font-black px-2.5 py-0.5 bg-white/95 text-pink-700 shadow-xs backdrop-blur-xs border border-white/50">
                           {item.category}
                         </Badge>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="w-full h-24 bg-gradient-to-br from-pink-50/90 to-pink-100/40 flex items-center justify-between px-4 border-b border-pink-100/50 text-pink-400">
+                      <div className="flex items-center gap-2">
+                        <div className="h-8 w-8 rounded-xl bg-white/90 text-pink-500 flex items-center justify-center shadow-2xs">
+                          <ShoppingBag className="h-4 w-4" />
+                        </div>
+                        <span className="text-[10px] font-black uppercase tracking-wider text-pink-700 bg-white/90 px-2 py-0.5 rounded-md">
+                          {item.category}
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-medium text-pink-400/80">Tanpa Foto</span>
+                    </div>
+                  )}
+
+                  <CardContent className="p-4 sm:p-5 flex flex-col justify-between flex-1 space-y-3">
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        {!item.image_url ? (
+                          <Badge variant="secondary" className="rounded-lg text-[10px] font-black px-2.5 py-0.5 bg-pink-50 text-pink-700 border border-pink-100">
+                            {item.category}
+                          </Badge>
+                        ) : (
+                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                            Menu Jastip
+                          </span>
+                        )}
                         <div className="flex items-center gap-1.5 bg-gray-50 px-2 py-1 rounded-xl border border-gray-100">
                           <Switch
                             checked={item.is_available}
@@ -689,6 +816,95 @@ export default function JastipManagementPage() {
               </Button>
             </CardContent>
           </Card>
+
+          {/* SUPABASE STORAGE & DATABASE SETTINGS CARD */}
+          <Card className="rounded-2xl sm:rounded-3xl border-gray-100 shadow-xs bg-white overflow-hidden">
+            <CardHeader className="bg-gradient-to-r from-emerald-50/60 to-teal-50/40 border-b border-emerald-100/60 p-4 sm:p-6">
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="h-11 w-11 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                    <Database className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-base sm:text-lg font-black text-gray-900 flex items-center gap-2">
+                      <span>Setelan Supabase (Storage & Kolom Foto)</span>
+                      <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100 border-emerald-200 text-[10px] font-black">
+                        Bucket: jastip-items
+                      </Badge>
+                    </CardTitle>
+                    <CardDescription className="text-xs font-medium text-gray-500">
+                      Konfigurasi Supabase Storage untuk mengizinkan upload foto menu jastip beresolusi tinggi dengan RLS publik.
+                    </CardDescription>
+                  </div>
+                </div>
+
+                <Button
+                  onClick={handleCopySql}
+                  variant="outline"
+                  size="sm"
+                  className="rounded-xl font-bold text-xs h-9 border-emerald-300 text-emerald-700 hover:bg-emerald-50 shrink-0 hidden sm:flex items-center gap-1.5"
+                >
+                  {copiedSql ? <CheckCheck className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
+                  <span>{copiedSql ? 'Tersalin!' : 'Salin Skrip SQL'}</span>
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="p-4 sm:p-6 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="p-3.5 rounded-2xl bg-gray-50 border border-gray-100">
+                  <p className="text-[10px] uppercase font-black tracking-wider text-gray-400">1. Kolom Database</p>
+                  <p className="text-xs font-bold text-gray-800 mt-1">public.jastip_items.image_url</p>
+                  <p className="text-[11px] text-gray-500 mt-0.5">Tipe TEXT untuk menyimpan URL foto produk</p>
+                </div>
+                <div className="p-3.5 rounded-2xl bg-gray-50 border border-gray-100">
+                  <p className="text-[10px] uppercase font-black tracking-wider text-gray-400">2. Storage Bucket</p>
+                  <p className="text-xs font-bold text-gray-800 mt-1">jastip-items (Public)</p>
+                  <p className="text-[11px] text-gray-500 mt-0.5">Maksimal 5MB/file (JPG, PNG, WEBP, GIF)</p>
+                </div>
+                <div className="p-3.5 rounded-2xl bg-gray-50 border border-gray-100">
+                  <p className="text-[10px] uppercase font-black tracking-wider text-gray-400">3. Izin Akses (RLS)</p>
+                  <p className="text-xs font-bold text-gray-800 mt-1">Public Read & Auth Write</p>
+                  <p className="text-[11px] text-gray-500 mt-0.5">Santri melihat publik, Guru mengunggah</p>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-black uppercase tracking-wider text-gray-700 flex items-center gap-1.5">
+                    <Database className="h-3.5 w-3.5 text-emerald-600" />
+                    <span>Skrip SQL Supabase untuk Dijalankan di SQL Editor</span>
+                  </Label>
+                  <Button
+                    onClick={handleCopySql}
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2.5 text-xs font-bold text-emerald-700 hover:bg-emerald-50 rounded-lg sm:hidden flex items-center gap-1"
+                  >
+                    {copiedSql ? <CheckCheck className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                    <span>{copiedSql ? 'Tersalin' : 'Salin SQL'}</span>
+                  </Button>
+                </div>
+                <div className="relative rounded-2xl overflow-hidden border border-gray-200 bg-gray-900 text-gray-100">
+                  <pre className="p-4 text-[11px] font-mono leading-relaxed overflow-x-auto max-h-60">
+                    {SUPABASE_STORAGE_SQL}
+                  </pre>
+                  <div className="absolute top-2.5 right-2.5">
+                    <Button
+                      onClick={handleCopySql}
+                      size="sm"
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold h-8 px-3 rounded-xl shadow-xs"
+                    >
+                      {copiedSql ? <CheckCheck className="h-3.5 w-3.5 mr-1" /> : <Copy className="h-3.5 w-3.5 mr-1" />}
+                      {copiedSql ? 'Berhasil Tersalin' : 'Salin SQL'}
+                    </Button>
+                  </div>
+                </div>
+                <p className="text-[11px] text-muted-foreground font-medium">
+                  💡 <strong>Cara Pakai:</strong> Buka Dashboard Supabase Anda &rarr; Pilih menu <strong>SQL Editor</strong> di bilah samping &rarr; Klik <strong>New Query</strong> &rarr; Tempelkan skrip di atas lalu tekan <strong>Run</strong>.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
 
@@ -706,6 +922,123 @@ export default function JastipManagementPage() {
           </DialogHeader>
 
           <div className="space-y-4 py-2">
+            {/* FOTO MENU / PRODUK JASTIP */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-black uppercase tracking-wider text-gray-700 flex items-center gap-1.5">
+                  <ImageIcon className="h-3.5 w-3.5 text-pink-600" />
+                  <span>Foto Menu Jastip</span>
+                  <span className="text-[10px] text-gray-400 font-normal lowercase">(opsional)</span>
+                </Label>
+                <div className="flex items-center gap-1 bg-gray-100 p-0.5 rounded-lg text-[10px] font-bold">
+                  <button
+                    type="button"
+                    onClick={() => setImageUploadMode('FILE')}
+                    className={cn(
+                      "px-2.5 py-1 rounded-md transition-all",
+                      imageUploadMode === 'FILE' ? "bg-white text-pink-600 shadow-2xs" : "text-gray-500 hover:text-gray-700"
+                    )}
+                  >
+                    Upload Foto
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setImageUploadMode('URL')}
+                    className={cn(
+                      "px-2.5 py-1 rounded-md transition-all",
+                      imageUploadMode === 'URL' ? "bg-white text-pink-600 shadow-2xs" : "text-gray-500 hover:text-gray-700"
+                    )}
+                  >
+                    Tautan URL
+                  </button>
+                </div>
+              </div>
+
+              {formImageUrl ? (
+                <div className="relative rounded-2xl overflow-hidden border border-gray-200 bg-gray-50 group">
+                  <div className="relative h-44 w-full bg-gray-100">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={formImageUrl}
+                      alt="Preview Foto Menu"
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => setFormImageUrl('')}
+                        className="rounded-xl font-bold text-xs h-8"
+                      >
+                        <Trash2 className="h-3.5 w-3.5 mr-1" /> Hapus Foto
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="p-2.5 bg-white border-t border-gray-100 flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-1.5 text-emerald-600 font-bold truncate">
+                      <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">Foto tersimpan di Supabase Storage</span>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setFormImageUrl('')}
+                      className="h-6 px-2 text-[11px] text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg"
+                    >
+                      Hapus
+                    </Button>
+                  </div>
+                </div>
+              ) : imageUploadMode === 'FILE' ? (
+                <div className="space-y-2">
+                  <label className={cn(
+                    "border-2 border-dashed rounded-2xl p-4 sm:p-5 flex flex-col items-center justify-center text-center cursor-pointer transition-all",
+                    uploadingImage ? "border-pink-300 bg-pink-50/50" : "border-gray-200 hover:border-pink-400 hover:bg-pink-50/30 bg-gray-50/60"
+                  )}>
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/jpg,image/png,image/webp,image/gif"
+                      onChange={handleFileUpload}
+                      disabled={uploadingImage}
+                      className="hidden"
+                    />
+                    {uploadingImage ? (
+                      <div className="flex flex-col items-center py-2">
+                        <Loader2 className="h-7 w-7 animate-spin text-pink-600 mb-2" />
+                        <p className="text-xs font-bold text-gray-800">Mengunggah foto ke Supabase Storage...</p>
+                        <p className="text-[10px] text-gray-400 mt-0.5">Bucket: jastip-items</p>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center py-1">
+                        <div className="h-10 w-10 rounded-2xl bg-pink-100 text-pink-600 flex items-center justify-center mb-2 shadow-2xs">
+                          <UploadCloud className="h-5 w-5" />
+                        </div>
+                        <p className="text-xs font-bold text-gray-800">
+                          Klik untuk memilih foto produk
+                        </p>
+                        <p className="text-[11px] text-gray-400 mt-0.5">
+                          Maksimal 5MB (JPG, PNG, WEBP, GIF)
+                        </p>
+                      </div>
+                    )}
+                  </label>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  <Input
+                    placeholder="https://images.unsplash.com/... atau tautan gambar"
+                    value={formImageUrl}
+                    onChange={(e) => setFormImageUrl(e.target.value)}
+                    className="h-11 rounded-xl text-xs bg-gray-50/70 border-gray-200 font-medium"
+                  />
+                  <p className="text-[10px] text-gray-400 font-medium">
+                    Masukkan URL gambar langsung yang dapat diakses publik.
+                  </p>
+                </div>
+              )}
+            </div>
             <div className="space-y-1.5">
               <Label className="text-xs font-black uppercase tracking-wider text-gray-600">Nama Barang / Jasa</Label>
               <Input

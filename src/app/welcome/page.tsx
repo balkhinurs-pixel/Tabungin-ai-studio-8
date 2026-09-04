@@ -60,9 +60,8 @@ export default function WelcomePage() {
 
     setSaving(true);
     
-    // Default role untuk pendaftaran baru lewat sini adalah TEACHER
+    // Daftarkan nama dan kode sekolah
     const result = await registerUserRoleAction({
-        role: 'TEACHER',
         schoolName: schoolName,
         schoolCode: schoolCode
     });

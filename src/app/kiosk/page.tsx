@@ -960,8 +960,16 @@ export default function KioskPage() {
                             <p className="text-white/60 font-black uppercase tracking-[0.3em] text-[10px] mb-8">Informasi Akun Siswa</p>
                             
                             <div className="w-full bg-white/10 backdrop-blur-3xl border border-white/10 p-8 rounded-[2.5rem] shadow-inner">
-                                <p className="text-white/40 text-[10px] font-black uppercase tracking-[0.4em] mb-4">Total Saldo Tersedia</p>
+                                <p className="text-white/40 text-[10px] font-black uppercase tracking-[0.4em] mb-4">Total Saldo Tabungan (Dana Bebas)</p>
                                 <p className="text-5xl font-black text-white tracking-tighter">{formatCurrency(student.balance)}</p>
+                                {student.dailyLimit && student.dailyLimit > 0 && (
+                                    <div className="mt-4 pt-3 border-t border-white/10 flex justify-between items-center text-xs">
+                                        <span className="text-white/60 text-[10px] font-bold uppercase tracking-wider">Sisa Uang Saku Kios Hari Ini:</span>
+                                        <span className="font-extrabold text-amber-300">
+                                            {formatCurrency(student.remainingDailyLimit ?? student.dailyLimit)}
+                                        </span>
+                                    </div>
+                                )}
                             </div>
                         </CardContent>
                     </Card>
@@ -1007,24 +1015,34 @@ export default function KioskPage() {
                 <div className="w-full max-w-md flex flex-col items-center space-y-8 animate-in slide-in-from-right-12 duration-500">
                     <div className="text-center">
                         <h2 className="text-2xl font-black text-white tracking-tight mb-2 uppercase">Pilih Nominal</h2>
-                        <p className="text-white/30 text-[11px] font-black tracking-[0.2em] uppercase">Maksimal: {formatCurrency(student.balance)}</p>
+                        <p className="text-white/40 text-[11px] font-black tracking-[0.2em] uppercase">
+                            {student.dailyLimit && student.dailyLimit > 0
+                                ? `Sisa Jatah Tarik Hari Ini: ${formatCurrency(student.remainingDailyLimit ?? student.dailyLimit)}`
+                                : `Maksimal: ${formatCurrency(student.balance)}`
+                            }
+                        </p>
                     </div>
                     <div className="grid grid-cols-2 gap-4 w-full">
-                        {QUICK_AMOUNTS.map(amt => (
-                            <Button 
-                                key={amt}
-                                disabled={amt > student.balance}
-                                className="h-28 rounded-[2.5rem] bg-white/10 border border-white/20 text-white text-2xl font-black hover:bg-white shadow-2xl hover:text-primary transition-all active:scale-90 disabled:opacity-20"
-                                onClick={() => {
-                                    setAmount(amt);
-                                    setReason('Uang Saku / Jajan');
-                                    setIsCustomReason(false);
-                                    setKioskState('REASON_SELECTION');
-                                }}
-                            >
-                                {amt.toLocaleString('id-ID')}
-                            </Button>
-                        ))}
+                        {QUICK_AMOUNTS.map(amt => {
+                            const maxAllowed = student.dailyLimit && student.dailyLimit > 0
+                                ? Math.min(student.balance, student.remainingDailyLimit ?? student.dailyLimit)
+                                : student.balance;
+                            return (
+                                <Button 
+                                    key={amt}
+                                    disabled={amt > maxAllowed}
+                                    className="h-28 rounded-[2.5rem] bg-white/10 border border-white/20 text-white text-2xl font-black hover:bg-white shadow-2xl hover:text-primary transition-all active:scale-90 disabled:opacity-20"
+                                    onClick={() => {
+                                        setAmount(amt);
+                                        setReason('Uang Saku / Jajan');
+                                        setIsCustomReason(false);
+                                        setKioskState('REASON_SELECTION');
+                                    }}
+                                >
+                                    {amt.toLocaleString('id-ID')}
+                                </Button>
+                            );
+                        })}
                     </div>
                     <div className="flex gap-4 w-full">
                         <Button 
