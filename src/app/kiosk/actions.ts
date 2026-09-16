@@ -21,6 +21,7 @@ export async function getStudentKioskData(nis: string, schoolCode?: string) {
         id,
         name,
         class,
+        avatar_url,
         daily_limit,
         transactions (
           amount,
@@ -73,6 +74,7 @@ export async function getStudentKioskData(nis: string, schoolCode?: string) {
         id: data.id,
         name: data.name,
         class: data.class,
+        avatarUrl: data.avatar_url || null,
         balance: balance,
         dailyLimit: data.daily_limit,
         remainingDailyLimit: remainingDailyLimit,

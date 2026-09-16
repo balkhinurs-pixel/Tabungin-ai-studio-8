@@ -65,6 +65,7 @@ export interface Student {
   nis: string;
   name: string;
   class: string;
+  avatar_url?: string | null;
   whatsapp_number?: string | null;
   daily_limit?: number | null;
   created_at?: string;

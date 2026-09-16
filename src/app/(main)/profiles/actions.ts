@@ -11,6 +11,82 @@ interface ActionResult {
   student?: Student;
 }
 
+export async function uploadStudentPhotoAction(formData: FormData): Promise<{ success: boolean; url?: string; message: string }> {
+  try {
+    const supabase = await createClient();
+    const supabaseAdmin = getSupabaseAdmin();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      return { success: false, message: 'Sesi berakhir, silakan login kembali.' };
+    }
+
+    const file = formData.get('file') as File | null;
+    if (!file) {
+      return { success: false, message: 'Tidak ada file foto yang dipilih.' };
+    }
+
+    // Validate size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      return { success: false, message: 'Ukuran foto maksimal 5MB.' };
+    }
+
+    // Validate mime type
+    const validMimeTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+    if (!validMimeTypes.includes(file.type)) {
+      return { success: false, message: 'Format file tidak didukung. Harap gunakan file JPG, PNG, atau WEBP.' };
+    }
+
+    const bucketName = 'student-photos';
+
+    // Ensure bucket exists in Supabase Storage
+    try {
+      const { data: buckets } = await supabaseAdmin.storage.listBuckets();
+      const bucketExists = buckets?.some(b => b.name === bucketName);
+      if (!bucketExists) {
+        await supabaseAdmin.storage.createBucket(bucketName, {
+          public: true,
+          fileSizeLimit: 5242880,
+          allowedMimeTypes: validMimeTypes
+        });
+      }
+    } catch (bucketErr) {
+      console.warn('[STORAGE_BUCKET_STUDENT_PHOTO_CHECK_WARN]', bucketErr);
+    }
+
+    const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+    const cleanFileName = `${user.id}/${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${ext}`;
+
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    const { error: uploadError } = await supabaseAdmin.storage
+      .from(bucketName)
+      .upload(cleanFileName, buffer, {
+        contentType: file.type,
+        upsert: true
+      });
+
+    if (uploadError) {
+      console.error('[UPLOAD_STUDENT_PHOTO_ERROR]', uploadError);
+      return { success: false, message: uploadError.message || 'Gagal mengunggah foto ke Supabase Storage.' };
+    }
+
+    const { data: publicUrlData } = supabaseAdmin.storage
+      .from(bucketName)
+      .getPublicUrl(cleanFileName);
+
+    return {
+      success: true,
+      url: publicUrlData.publicUrl,
+      message: 'Foto profil siswa berhasil diunggah.'
+    };
+  } catch (err: any) {
+    console.error('[UPLOAD_STUDENT_PHOTO_ACTION_ERROR]', err);
+    return { success: false, message: err.message || 'Terjadi kesalahan saat mengunggah foto profil siswa.' };
+  }
+}
+
 export async function addStudentAction(
   formData: FormData
 ): Promise<ActionResult> {
@@ -59,6 +135,7 @@ export async function addStudentAction(
   const newWhatsappNumber = formData.get('whatsapp_number') as string | null;
   const rawDailyLimit = formData.get('daily_limit') as string | null;
   const daily_limit = rawDailyLimit && rawDailyLimit.trim() !== '' ? parseInt(rawDailyLimit.replace(/\D/g, '')) : null;
+  const avatar_url = (formData.get('avatar_url') as string | null) || null;
 
   if (!newNis || !newName || !newStudentClass) {
     return { success: false, message: 'Data tidak lengkap. Mohon isi NIS, Nama, dan Kelas.' };
@@ -96,7 +173,8 @@ export async function addStudentAction(
       class: newStudentClass,
       user_id: user.id, // The admin/teacher user_id who created the student
       whatsapp_number: newWhatsappNumber,
-      daily_limit: daily_limit || null
+      daily_limit: daily_limit || null,
+      avatar_url: avatar_url || null
     })
     .select()
     .single();
@@ -223,15 +301,27 @@ export async function updateStudentAction(
     const pin = formData.get('pin') as string;
     const rawDailyLimit = formData.get('daily_limit') as string | null;
     const daily_limit = rawDailyLimit !== null && rawDailyLimit.trim() !== '' ? parseInt(rawDailyLimit.replace(/\D/g, '')) : null;
+    const avatar_url = formData.get('avatar_url') as string | null;
 
     if (!id || !nis || !name || !studentClass) {
         return { success: false, message: 'Data tidak lengkap. Mohon isi NIS, Nama, dan Kelas.' };
     }
 
     // 1. Update the public student profile
+    const updatePayload: Record<string, any> = {
+        nis,
+        name,
+        class: studentClass,
+        whatsapp_number,
+        daily_limit
+    };
+    if (avatar_url !== null) {
+        updatePayload.avatar_url = avatar_url.trim() || null;
+    }
+
     const { data: updatedStudentData, error: updateStudentError } = await supabase
         .from('students')
-        .update({ nis, name, class: studentClass, whatsapp_number, daily_limit })
+        .update(updatePayload)
         .eq('id', id)
         .select()
         .single();

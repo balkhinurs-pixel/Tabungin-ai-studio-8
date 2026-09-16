@@ -98,7 +98,7 @@ export default function PrintCardsPage() {
             { data: studentsData, error: studentsError },
             { data: profileData, error: profileError }
         ] = await Promise.all([
-             supabase.from('students').select('id, nis, name, class').order('name', { ascending: true }),
+             supabase.from('students').select('id, nis, name, class, avatar_url').order('name', { ascending: true }),
              supabase.from('profiles').select('*').eq('id', user.id).single()
         ]);
        
@@ -159,7 +159,13 @@ export default function PrintCardsPage() {
     ] : [59, 130, 246];
   };
 
-  const drawCard = async (doc: jsPDF, x: number, y: number, student: { nis: string, name: string, class: string }, schoolCode: string) => {
+  const drawCard = async (
+    doc: jsPDF, 
+    x: number, 
+    y: number, 
+    student: { nis: string; name: string; class: string; avatar_url?: string | null }, 
+    schoolCode: string
+  ) => {
     const cardWidth = 85.6;
     const cardHeight = 53.98;
     const qrData = `${student.nis},${schoolCode}`;
@@ -168,12 +174,20 @@ export default function PrintCardsPage() {
     
     let logoBase64 = customLogo;
     let qrBase64: string | null = null;
+    let avatarBase64: string | null = null;
 
     try {
         if (!logoBase64) {
             logoBase64 = await getImageAsBase64('https://picsum.photos/seed/logoschool/200/200');
         }
         qrBase64 = await getImageAsBase64(qrUrl);
+        if (student.avatar_url) {
+            try {
+                avatarBase64 = await getImageAsBase64(student.avatar_url);
+            } catch (err) {
+                console.warn("Could not fetch avatar for PDF:", err);
+            }
+        }
     } catch (error) {
         console.error("Failed to fetch images for PDF:", error);
         return;
@@ -216,23 +230,66 @@ export default function PrintCardsPage() {
         doc.text(profile?.school_name || 'Sekolah Anda', x + (cardTemplate === 'modern' ? 10 : 5), y + 10);
     }
   
-    // QR Code
-    if (qrBase64) {
-        doc.addImage(qrBase64, 'PNG', x + (cardTemplate === 'modern' ? 10 : 5), y + 15, 22, 22);
+    if (avatarBase64) {
+        // Layout with Student Photo:
+        // Photo on Left, Text in Middle, QR Code on Right
+        const photoX = x + (cardTemplate === 'modern' ? 9 : 5);
+        const photoY = y + (cardTemplate === 'elegant' ? 15 : 14);
+        const photoW = 16;
+        const photoH = 20;
+
+        doc.setDrawColor(210, 210, 210);
+        doc.roundedRect(photoX, photoY, photoW, photoH, 1, 1);
+        try {
+            doc.addImage(avatarBase64, 'JPEG', photoX, photoY, photoW, photoH);
+        } catch {
+            try {
+                doc.addImage(avatarBase64, 'PNG', photoX, photoY, photoW, photoH);
+            } catch (imgErr) {
+                console.warn('doc.addImage avatar failed', imgErr);
+            }
+        }
+
+        // Student Info
+        const textX = photoX + photoW + 3;
+        doc.setTextColor(0, 0, 0);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9.5);
+        doc.text(student.name, textX, photoY + 5);
+        
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(107, 114, 128);
+        doc.setFontSize(7);
+        doc.text(`NIS: ${student.nis}`, textX, photoY + 10);
+        doc.text(`Kelas: ${student.class}`, textX, photoY + 14);
+        doc.text(`Kode: ${schoolCode}`, textX, photoY + 18);
+
+        // QR Code on right
+        if (qrBase64) {
+            const qrSize = 19;
+            const qrX = x + cardWidth - qrSize - 4;
+            const qrY = photoY + 0.5;
+            doc.addImage(qrBase64, 'PNG', qrX, qrY, qrSize, qrSize);
+        }
+    } else {
+        // Layout without Student Photo:
+        // QR Code on Left, Student Info on Right
+        if (qrBase64) {
+            doc.addImage(qrBase64, 'PNG', x + (cardTemplate === 'modern' ? 10 : 5), y + 15, 22, 22);
+        }
+        
+        doc.setTextColor(0, 0, 0);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(11);
+        doc.text(student.name, x + 35, y + 24);
+        
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(107, 114, 128);
+        doc.setFontSize(8);
+        doc.text(`NIS: ${student.nis}`, x + 35, y + 30);
+        doc.text(`Kelas: ${student.class}`, x + 35, y + 34);
+        doc.text(`Kode: ${schoolCode}`, x + 35, y + 38);
     }
-    
-    // Student Info
-    doc.setTextColor(0, 0, 0);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11);
-    doc.text(student.name, x + 35, y + 24);
-    
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(107, 114, 128);
-    doc.setFontSize(8);
-    doc.text(`NIS: ${student.nis}`, x + 35, y + 30);
-    doc.text(`Kelas: ${student.class}`, x + 35, y + 34);
-    doc.text(`Kode: ${schoolCode}`, x + 35, y + 38);
   
     // Footer
     doc.setFontSize(6);
@@ -428,10 +485,17 @@ export default function PrintCardsPage() {
                                             )}
                                         >
                                             <div className={cn(
-                                                "h-5 w-5 rounded-md flex items-center justify-center border-2 transition-all",
+                                                "h-5 w-5 rounded-md flex items-center justify-center border-2 transition-all shrink-0",
                                                 isSelected ? "bg-primary border-primary text-white" : "border-gray-200"
                                             )}>
                                                 {isSelected && <CheckSquare className="h-4 w-4" />}
+                                            </div>
+                                            <div className="h-8 w-8 rounded-full overflow-hidden bg-muted flex items-center justify-center shrink-0 border border-gray-100">
+                                                {student.avatar_url ? (
+                                                    <img src={student.avatar_url} alt={student.name} className="w-full h-full object-cover" />
+                                                ) : (
+                                                    <UserCheck className="h-4 w-4 text-muted-foreground/60" />
+                                                )}
                                             </div>
                                             <div className="flex flex-col flex-1 truncate">
                                                 <p className={cn("text-sm font-bold truncate", isSelected ? "text-primary" : "text-gray-700")}>{student.name}</p>
@@ -494,21 +558,30 @@ export default function PrintCardsPage() {
                                 </div>
                             </div>
 
-                            <div className={`mt-6 flex gap-4 items-center ${cardTemplate === 'elegant' ? 'mt-10 text-gray-900' : ''}`}>
-                                <div className="bg-white p-1.5 rounded-lg shadow-md border border-gray-100 flex-shrink-0">
+                            <div className={`mt-5 flex gap-3 items-center ${cardTemplate === 'elegant' ? 'mt-9 text-gray-900' : ''}`}>
+                                {previewStudent?.avatar_url ? (
+                                    <div className="w-[54px] h-[66px] rounded-lg overflow-hidden border border-gray-200 shadow-sm shrink-0 bg-gray-50">
+                                        <img 
+                                            src={previewStudent.avatar_url} 
+                                            alt={previewStudent.name} 
+                                            className="w-full h-full object-cover" 
+                                        />
+                                    </div>
+                                ) : null}
+                                <div className="bg-white p-1 rounded-lg shadow-md border border-gray-100 flex-shrink-0">
                                     {qrPreviewUrl ? (
-                                        <Image src={qrPreviewUrl} width={65} height={65} alt="QR" className="rounded-sm" />
+                                        <Image src={qrPreviewUrl} width={previewStudent?.avatar_url ? 52 : 65} height={previewStudent?.avatar_url ? 52 : 65} alt="QR" className="rounded-sm" />
                                     ) : (
-                                        <div className="w-[65px] h-[65px] bg-gray-100 animate-pulse rounded-sm" />
+                                        <div className={cn("bg-gray-100 animate-pulse rounded-sm", previewStudent?.avatar_url ? "w-[52px] h-[52px]" : "w-[65px] h-[65px]")} />
                                     )}
                                 </div>
-                                <div className={`flex flex-col gap-0.5 ${cardTemplate === 'elegant' ? 'translate-y-2' : ''}`}>
-                                    <p className="font-bold text-sm tracking-tight text-gray-900 leading-tight truncate max-w-[150px]">
+                                <div className={`flex flex-col gap-0.5 min-w-0 ${cardTemplate === 'elegant' ? 'translate-y-2' : ''}`}>
+                                    <p className="font-bold text-xs tracking-tight text-gray-900 leading-tight truncate max-w-[130px]">
                                         {previewStudent?.name || 'Nama Lengkap Siswa'}
                                     </p>
                                     <div className="space-y-0.5 mt-1">
-                                        <p className="text-[8px] font-semibold text-gray-500 uppercase tracking-widest">NIS: <span className="text-gray-800">{previewStudent?.nis || '000000'}</span></p>
-                                        <p className="text-[8px] font-semibold text-gray-500 uppercase tracking-widest">KELAS: <span className="text-gray-800">{previewStudent?.class || 'X-A'}</span></p>
+                                        <p className="text-[7.5px] font-semibold text-gray-500 uppercase tracking-widest">NIS: <span className="text-gray-800">{previewStudent?.nis || '000000'}</span></p>
+                                        <p className="text-[7.5px] font-semibold text-gray-500 uppercase tracking-widest">KELAS: <span className="text-gray-800">{previewStudent?.class || 'X-A'}</span></p>
                                     </div>
                                 </div>
                             </div>

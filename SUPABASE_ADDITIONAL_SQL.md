@@ -153,4 +153,49 @@ DROP POLICY IF EXISTS "Authenticated users can delete jastip images" ON storage.
 CREATE POLICY "Authenticated users can delete jastip images"
 ON storage.objects FOR DELETE TO authenticated
 USING ( bucket_id = 'jastip-items' );
+
+-- ==========================================================
+-- 8. PENGATURAN FOTO PROFIL SISWA & SUPABASE STORAGE
+-- ==========================================================
+
+-- 8.1. Tambahkan kolom avatar_url ke tabel public.students
+ALTER TABLE public.students 
+ADD COLUMN IF NOT EXISTS avatar_url TEXT;
+
+-- 8.2. Buat Bucket Storage 'student-photos' (Public)
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'student-photos', 
+  'student-photos', 
+  true, 
+  5242880, -- Maksimal 5 MB per file
+  ARRAY['image/jpeg', 'image/jpg', 'image/png', 'image/webp']
+)
+ON CONFLICT (id) DO UPDATE SET 
+  public = true,
+  file_size_limit = 5242880,
+  allowed_mime_types = ARRAY['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+
+-- 8.3. Izin Akses Baca Publik untuk Foto Siswa (Kiosk, Cetak Kartu, Profil)
+DROP POLICY IF EXISTS "Public can view student photos" ON storage.objects;
+CREATE POLICY "Public can view student photos"
+ON storage.objects FOR SELECT
+USING ( bucket_id = 'student-photos' );
+
+-- 8.4. Izin Akses Unggah bagi Pengguna Terautentikasi (Guru / Admin)
+DROP POLICY IF EXISTS "Authenticated users can upload student photos" ON storage.objects;
+CREATE POLICY "Authenticated users can upload student photos"
+ON storage.objects FOR INSERT TO authenticated
+WITH CHECK ( bucket_id = 'student-photos' );
+
+-- 8.5. Izin Akses Perbarui & Hapus Foto Siswa
+DROP POLICY IF EXISTS "Authenticated users can update student photos" ON storage.objects;
+CREATE POLICY "Authenticated users can update student photos"
+ON storage.objects FOR UPDATE TO authenticated
+USING ( bucket_id = 'student-photos' );
+
+DROP POLICY IF EXISTS "Authenticated users can delete student photos" ON storage.objects;
+CREATE POLICY "Authenticated users can delete student photos"
+ON storage.objects FOR DELETE TO authenticated
+USING ( bucket_id = 'student-photos' );
 ```

@@ -23,13 +23,14 @@ import {
   } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { PlusCircle, Download, Upload, Filter, Search, ShieldCheck, User, KeyRound, Pencil, Trash2, Save, Loader2, Info, ArrowRight, RotateCcw, SortAsc, X, Archive, RefreshCw, Check, Copy, MessageSquare } from 'lucide-react';
+import { PlusCircle, Download, Upload, Filter, Search, ShieldCheck, User, KeyRound, Pencil, Trash2, Save, Loader2, Info, ArrowRight, RotateCcw, SortAsc, X, Archive, RefreshCw, Check, Copy, MessageSquare, Camera, UploadCloud } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import type { Student, Profile } from '@/types';
 import type { AuthUser } from '@supabase/supabase-js';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { uploadStudentPhotoAction } from './actions';
 
 // These types define the shape of the Server Actions that will be passed as props.
 type BoundAddStudentAction = (formData: FormData) => Promise<{success: boolean; message: string; student?: Student;}>;
@@ -74,6 +75,9 @@ const EditStudentDialog = ({
     const [whatsappNumber, setWhatsappNumber] = useState(student?.whatsapp_number || '');
     const [dailyLimit, setDailyLimit] = useState(student?.daily_limit ? String(student.daily_limit) : '');
     const [pin, setPin] = useState('');
+    const [avatarUrl, setAvatarUrl] = useState(student?.avatar_url || '');
+    const [uploadingPhoto, setUploadingPhoto] = useState(false);
+    const photoInputRef = useRef<HTMLInputElement>(null);
     const [open, setOpen] = useState(false);
     const [loading, setLoading] = useState(false);
     const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
@@ -88,9 +92,33 @@ const EditStudentDialog = ({
             setWhatsappNumber(student.whatsapp_number || '');
             setDailyLimit(student.daily_limit ? String(student.daily_limit) : '');
             setPin('');
+            setAvatarUrl(student.avatar_url || '');
             setShowArchiveConfirm(false);
         }
     }, [student, open]);
+
+    const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setUploadingPhoto(true);
+        const fd = new FormData();
+        fd.append('file', file);
+        const res = await uploadStudentPhotoAction(fd);
+        setUploadingPhoto(false);
+        if (res.success && res.url) {
+            setAvatarUrl(res.url);
+            toast({
+                title: 'Foto Terunggah',
+                description: 'Foto profil siswa berhasil diunggah.',
+            });
+        } else {
+            toast({
+                title: 'Gagal Upload Foto',
+                description: res.message,
+                variant: 'destructive',
+            });
+        }
+    };
 
     const handleSubmit = async (formData: FormData) => {
         if (pin && pin.length !== 6) {
@@ -163,6 +191,72 @@ const EditStudentDialog = ({
                 </DialogHeader>
                 <div className="grid gap-4 py-4 max-h-[70vh] overflow-y-auto pr-1">
                     <input type="hidden" name="id" value={student.id} />
+                    <input type="hidden" name="avatar_url" value={avatarUrl} />
+
+                    {/* Foto Siswa Upload & Preview */}
+                    <div className="flex flex-col items-center justify-center p-3 bg-muted/40 rounded-xl border border-dashed border-border gap-2">
+                        <div className="relative group">
+                            <div className="w-20 h-20 rounded-full overflow-hidden border-2 border-primary/20 bg-muted flex items-center justify-center shadow-inner">
+                                {avatarUrl ? (
+                                    <img src={avatarUrl} alt={name || 'Foto Siswa'} className="w-full h-full object-cover" />
+                                ) : (
+                                    <User className="w-9 h-9 text-muted-foreground/60" />
+                                )}
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => photoInputRef.current?.click()}
+                                disabled={uploadingPhoto}
+                                className="absolute bottom-0 right-0 p-1.5 bg-primary text-primary-foreground rounded-full shadow-md hover:bg-primary/90 transition-transform active:scale-95 disabled:opacity-50"
+                                title="Pilih Foto Profil"
+                            >
+                                {uploadingPhoto ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Camera className="w-3.5 h-3.5" />}
+                            </button>
+                        </div>
+                        <input 
+                            type="file" 
+                            ref={photoInputRef} 
+                            className="hidden" 
+                            accept="image/jpeg,image/png,image/webp" 
+                            onChange={handlePhotoUpload} 
+                        />
+                        <div className="flex items-center gap-2">
+                            <Button 
+                                type="button" 
+                                variant="outline" 
+                                size="sm" 
+                                className="h-7 text-xs" 
+                                onClick={() => photoInputRef.current?.click()} 
+                                disabled={uploadingPhoto}
+                            >
+                                {uploadingPhoto ? (
+                                    <>
+                                        <Loader2 className="mr-1.5 h-3 w-3 animate-spin" /> Mengunggah...
+                                    </>
+                                ) : (
+                                    <>
+                                        <UploadCloud className="mr-1.5 h-3 w-3" /> {avatarUrl ? 'Ganti Foto' : 'Unggah Foto'}
+                                    </>
+                                )}
+                            </Button>
+                            {avatarUrl && (
+                                <Button 
+                                    type="button" 
+                                    variant="ghost" 
+                                    size="sm" 
+                                    className="h-7 text-xs text-destructive hover:text-destructive hover:bg-destructive/10" 
+                                    onClick={() => setAvatarUrl('')} 
+                                    disabled={uploadingPhoto}
+                                >
+                                    Hapus
+                                </Button>
+                            )}
+                        </div>
+                        <p className="text-[10px] text-muted-foreground text-center">
+                            Foto akan muncul pada Kartu Siswa dan layar Kios ATM.
+                        </p>
+                    </div>
+
                     <div className="space-y-2">
                         <Label htmlFor="edit-nis">NIS (Nomor Induk Siswa)</Label>
                         <Input id="edit-nis" name="nis" value={nis} onChange={(e) => setNis(e.target.value)} required />
@@ -667,14 +761,41 @@ export default function ProfilesClientPage({
   const [addLoading, setAddLoading] = useState(false);
   const [addPin, setAddPin] = useState('123456');
   const [addDailyLimit, setAddDailyLimit] = useState('');
+  const [addAvatarUrl, setAddAvatarUrl] = useState('');
+  const [addUploadingPhoto, setAddUploadingPhoto] = useState(false);
+  const addPhotoInputRef = useRef<HTMLInputElement>(null);
 
-  // Efek untuk mereset PIN & Limit setiap kali dialog dibuka
+  // Efek untuk mereset PIN, Limit, dan Foto setiap kali dialog dibuka
   useEffect(() => {
     if (addDialogOpen) {
       setAddPin('123456');
       setAddDailyLimit('');
+      setAddAvatarUrl('');
     }
   }, [addDialogOpen]);
+
+  const handleAddPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setAddUploadingPhoto(true);
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await uploadStudentPhotoAction(fd);
+    setAddUploadingPhoto(false);
+    if (res.success && res.url) {
+      setAddAvatarUrl(res.url);
+      toast({
+        title: 'Foto Terunggah',
+        description: 'Foto profil siswa berhasil diunggah.',
+      });
+    } else {
+      toast({
+        title: 'Gagal Upload Foto',
+        description: res.message,
+        variant: 'destructive',
+      });
+    }
+  };
 
   const handleArchiveStudent = (studentId: string, updatedNisSuffix: string, updatedName: string) => {
     setStudents(prev =>
@@ -731,6 +852,7 @@ export default function ProfilesClientPage({
         }
         formRef.current?.reset();
         setAddPin('123456');
+        setAddAvatarUrl('');
         setAddDialogOpen(false);
     } else {
         toast({
@@ -846,7 +968,73 @@ export default function ProfilesClientPage({
                   <DialogTitle>Tambah Siswa Baru</DialogTitle>
                   <DialogDescription>Akun login untuk siswa akan dibuat secara otomatis menggunakan kode sekolah Anda.</DialogDescription>
                 </DialogHeader>
-                <div className="grid gap-4 py-4">
+                <div className="grid gap-4 py-4 max-h-[70vh] overflow-y-auto pr-1">
+                  <input type="hidden" name="avatar_url" value={addAvatarUrl} />
+
+                  {/* Foto Siswa Upload & Preview */}
+                  <div className="flex flex-col items-center justify-center p-3 bg-muted/40 rounded-xl border border-dashed border-border gap-2">
+                    <div className="relative group">
+                      <div className="w-20 h-20 rounded-full overflow-hidden border-2 border-primary/20 bg-muted flex items-center justify-center shadow-inner">
+                        {addAvatarUrl ? (
+                          <img src={addAvatarUrl} alt="Foto Siswa" className="w-full h-full object-cover" />
+                        ) : (
+                          <User className="w-9 h-9 text-muted-foreground/60" />
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => addPhotoInputRef.current?.click()}
+                        disabled={addUploadingPhoto}
+                        className="absolute bottom-0 right-0 p-1.5 bg-primary text-primary-foreground rounded-full shadow-md hover:bg-primary/90 transition-transform active:scale-95 disabled:opacity-50"
+                        title="Pilih Foto Profil"
+                      >
+                        {addUploadingPhoto ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Camera className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                    <input 
+                      type="file" 
+                      ref={addPhotoInputRef} 
+                      className="hidden" 
+                      accept="image/jpeg,image/png,image/webp" 
+                      onChange={handleAddPhotoUpload} 
+                    />
+                    <div className="flex items-center gap-2">
+                      <Button 
+                        type="button" 
+                        variant="outline" 
+                        size="sm" 
+                        className="h-7 text-xs" 
+                        onClick={() => addPhotoInputRef.current?.click()} 
+                        disabled={addUploadingPhoto}
+                      >
+                        {addUploadingPhoto ? (
+                          <>
+                            <Loader2 className="mr-1.5 h-3 w-3 animate-spin" /> Mengunggah...
+                          </>
+                        ) : (
+                          <>
+                            <UploadCloud className="mr-1.5 h-3 w-3" /> {addAvatarUrl ? 'Ganti Foto' : 'Unggah Foto'}
+                          </>
+                        )}
+                      </Button>
+                      {addAvatarUrl && (
+                        <Button 
+                          type="button" 
+                          variant="ghost" 
+                          size="sm" 
+                          className="h-7 text-xs text-destructive hover:text-destructive hover:bg-destructive/10" 
+                          onClick={() => setAddAvatarUrl('')} 
+                          disabled={addUploadingPhoto}
+                        >
+                          Hapus
+                        </Button>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-muted-foreground text-center">
+                      Foto akan muncul pada Kartu Siswa dan layar Kios ATM.
+                    </p>
+                  </div>
+
                   <div className="space-y-2">
                       <Label htmlFor="nis">NIS (Nomor Induk Siswa)</Label>
                       <Input id="nis" name="nis" required />
@@ -1048,9 +1236,13 @@ export default function ProfilesClientPage({
                     filteredStudents.map((student) => (
                     <TableRow key={student.id}>
                         <TableCell>
-                            <Button variant="outline" size="icon" className='h-8 w-8 rounded-full bg-secondary/50' asChild>
-                                <Link href={`/profiles/${student.id}`}>
-                                    <User className="h-4 w-4 text-primary" />
+                            <Button variant="outline" size="icon" className='h-8 w-8 rounded-full bg-secondary/50 overflow-hidden p-0 border border-primary/20' asChild>
+                                <Link href={`/profiles/${student.id}`} title="Lihat Profil Siswa">
+                                    {student.avatar_url ? (
+                                        <img src={student.avatar_url} alt={student.name} className="h-full w-full object-cover" />
+                                    ) : (
+                                        <User className="h-4 w-4 text-primary" />
+                                    )}
                                 </Link>
                             </Button>
                         </TableCell>

@@ -112,8 +112,12 @@ export default async function StudentProfilePage({ params }: StudentProfilePageP
                 Daftar Siswa
             </Link>
         </Button>
-        <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
+        <div className="h-9 w-9 rounded-full bg-primary/10 overflow-hidden border border-primary/20 flex items-center justify-center">
+          {student.avatar_url ? (
+            <img src={student.avatar_url} alt={student.name} className="h-full w-full object-cover" />
+          ) : (
             <User className="h-4 w-4 text-primary" />
+          )}
         </div>
       </div>
 
@@ -133,9 +137,15 @@ export default async function StudentProfilePage({ params }: StudentProfilePageP
                     <span>Kelas {student.class}</span>
                 </div>
             </div>
-            <div className="h-12 w-12 rounded-2xl bg-white/20 flex items-center justify-center backdrop-blur-md border border-white/20 shadow-inner">
+            {student.avatar_url ? (
+              <div className="h-14 w-14 rounded-2xl overflow-hidden border-2 border-white/60 shadow-md shrink-0">
+                <img src={student.avatar_url} alt={student.name} className="h-full w-full object-cover" />
+              </div>
+            ) : (
+              <div className="h-12 w-12 rounded-2xl bg-white/20 flex items-center justify-center backdrop-blur-md border border-white/20 shadow-inner shrink-0">
                 <Wallet className="h-6 w-6 text-white" />
-            </div>
+              </div>
+            )}
           </div>
 
           <div className="mt-auto">

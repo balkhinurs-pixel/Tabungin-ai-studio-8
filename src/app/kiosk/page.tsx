@@ -953,9 +953,15 @@ export default function KioskPage() {
                     <Card className="bg-gradient-to-br from-primary via-blue-600 to-blue-900 border-none shadow-2xl rounded-[3rem] overflow-hidden relative">
                         <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/4 pointer-events-none" />
                         <CardContent className="p-10 flex flex-col items-center text-center relative z-10">
-                            <div className="bg-white/20 p-4 rounded-full mb-6 backdrop-blur-md border border-white/20">
-                                <CheckCircle2 className="h-8 w-8 text-white" />
-                            </div>
+                            {student.avatarUrl ? (
+                                <div className="w-24 h-24 rounded-full mb-5 overflow-hidden border-4 border-white/50 shadow-2xl bg-white/20 shrink-0">
+                                    <img src={student.avatarUrl} alt={student.name} className="w-full h-full object-cover" />
+                                </div>
+                            ) : (
+                                <div className="bg-white/20 p-4 rounded-full mb-6 backdrop-blur-md border border-white/20">
+                                    <CheckCircle2 className="h-8 w-8 text-white" />
+                                </div>
+                            )}
                             <h2 className="text-3xl font-black text-white tracking-tight mb-2 uppercase">{student.name}</h2>
                             <p className="text-white/60 font-black uppercase tracking-[0.3em] text-[10px] mb-8">Informasi Akun Siswa</p>
                             
@@ -1234,7 +1240,14 @@ export default function KioskPage() {
                                     </div>
                                     <div className="flex justify-between items-center text-sm font-bold text-gray-500">
                                         <span className="uppercase tracking-[0.2em] text-[10px] text-gray-400">Nama Siswa</span>
-                                        <span className="text-gray-900 font-black truncate max-w-[180px] uppercase">{student.name}</span>
+                                        <div className="flex items-center gap-2">
+                                            {student.avatarUrl && (
+                                                <div className="w-6 h-6 rounded-full overflow-hidden border border-gray-200 shrink-0">
+                                                    <img src={student.avatarUrl} alt={student.name} className="w-full h-full object-cover" />
+                                                </div>
+                                            )}
+                                            <span className="text-gray-900 font-black truncate max-w-[180px] uppercase">{student.name}</span>
+                                        </div>
                                     </div>
                                     <div className="flex justify-between items-center text-sm font-bold text-gray-500">
                                         <span className="uppercase tracking-[0.2em] text-[10px] text-gray-400">Keterangan</span>
