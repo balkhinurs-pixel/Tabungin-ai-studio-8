@@ -460,8 +460,8 @@ export async function getStudentJastipCatalogAction(): Promise<{
       }
     }
 
-    let studentData = null;
-    let teacherUserId = null;
+    let studentData: any = null;
+    let teacherUserId: string | null = null;
 
     if (studentRecord) {
       teacherUserId = studentRecord.user_id;

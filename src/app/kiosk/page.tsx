@@ -3,6 +3,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { 
   ScanLine, 
   ArrowLeft, 
@@ -658,28 +659,42 @@ export default function KioskPage() {
   );
 
   return (
-    <div className="min-h-screen bg-black flex flex-col relative overflow-hidden font-sans">
-        {/* Layer Video Latar Belakang */}
-        <div className="absolute inset-0 z-0">
-             <video 
+    <div className="min-h-screen bg-slate-950 flex flex-col relative overflow-hidden font-sans">
+        {/* Layer Latar Belakang Gambar Full Page & Video Kamera */}
+        <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+            {/* Asset Background Kios Full Page */}
+            <Image 
+                src="/Assets/bg-kios.webp"
+                alt="ATM Kiosk Background"
+                fill
+                priority
+                sizes="100vw"
+                className="object-cover object-center pointer-events-none select-none"
+                referrerPolicy="no-referrer"
+            />
+
+            {/* Video Kamera Langsung (Hanya aktif & transparan saat mode CAMERA aktif) */}
+            <video 
                 ref={videoRef} 
                 className={cn(
-                    "w-full h-full object-cover transition-all duration-500",
+                    "w-full h-full object-cover transition-all duration-500 absolute inset-0",
                     facingMode === 'user' && "-scale-x-100",
                     kioskState === 'SCANNING' && activeScanMode === 'CAMERA'
                       ? "opacity-100 blur-0 scale-100"
-                      : "blur-[100px] opacity-20 scale-125"
+                      : "opacity-0 scale-105 pointer-events-none"
                 )} 
                 autoPlay 
                 playsInline 
                 muted 
             />
             <canvas ref={canvasRef} className="hidden" />
+
+            {/* Overlay Gradien Halus: Memastikan gambar background tampak jelas penuh tanpa menjadi hitam pekat, sekaligus menjaga kontras teks dan kartu */}
             <div className={cn(
-              "absolute inset-0 transition-opacity duration-500 pointer-events-none",
+              "absolute inset-0 transition-opacity duration-500",
               activeScanMode === 'CAMERA' && kioskState === 'SCANNING'
-                ? "bg-gradient-to-t from-black/80 via-transparent to-black/80"
-                : "bg-gradient-to-t from-black via-black/60 to-black/90"
+                ? "bg-gradient-to-t from-slate-950/80 via-transparent to-slate-950/80"
+                : "bg-gradient-to-b from-slate-950/50 via-slate-950/20 to-slate-950/65 backdrop-blur-[0.5px]"
             )} />
         </div>
 
@@ -1297,8 +1312,8 @@ export default function KioskPage() {
         </div>
 
         {/* UI Galat Akses Kamera */}
-        {hasCameraPermission === false && (
-            <div className="absolute inset-0 z-[100] bg-black flex flex-col items-center justify-center p-10 text-center">
+        {hasCameraPermission === false && activeScanMode === 'CAMERA' && (
+            <div className="absolute inset-0 z-[100] bg-slate-950/85 backdrop-blur-xl flex flex-col items-center justify-center p-10 text-center animate-in fade-in duration-300">
                  <div className="bg-rose-500/10 p-8 rounded-full mb-8 border border-rose-500/20 shadow-[0_0_50px_rgba(244,63,94,0.1)]">
                     <AlertCircle className="h-16 w-16 text-rose-500" />
                 </div>
