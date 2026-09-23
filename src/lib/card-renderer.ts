@@ -8,6 +8,7 @@ export interface CardRenderConfig {
   schoolCode: string;
   frontBgUrl?: string;
   backBgUrl?: string;
+  onlyPhotoAndName?: boolean;
   // Optional legacy fields if needed
   schoolName?: string;
   schoolType?: string;
@@ -36,26 +37,35 @@ const loadImage = (src: string): Promise<HTMLImageElement> => {
 };
 
 /**
- * Render Front Card to an HTML Canvas at 848 x 1264 px (native asset resolution)
+ * Render Front Card to an HTML Canvas
+ * Supports both high-res templates:
+ * - Kartu-dpn.webp (512x768 -> scaled to 1024x1536, only photo and name)
+ * - Kartu-depan.webp (848x1264, photo, name, class & NIS)
  */
 export async function renderFrontCardToCanvas(
   student: StudentCardInfo,
   config: CardRenderConfig
 ): Promise<HTMLCanvasElement> {
-  const width = 848;
-  const height = 1264;
+  const isDpnTemplate =
+    config.onlyPhotoAndName ||
+    config.frontBgUrl === '/Assets/Kartu-dpn.webp' ||
+    Boolean(config.frontBgUrl?.includes('Kartu-dpn'));
+
+  const width = isDpnTemplate ? 1024 : 848;
+  const height = isDpnTemplate ? 1536 : 1264;
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Canvas 2D context not available');
 
-  // 1. Draw background image containing all card borders, headers, arch, ribbon, and pillars
+  // 1. Draw background image
+  const primaryBg = config.frontBgUrl || (isDpnTemplate ? '/Assets/Kartu-dpn.webp' : '/Assets/Kartu-depan.webp');
   const candidateUrls = [
-    config.frontBgUrl,
-    '/Assets/Kartu-depan.webp',
-    '/Assets/Kartu-dpn.webp',
-    '/Assets/Kartu-depan.png'
+    primaryBg,
+    isDpnTemplate ? '/Assets/Kartu-dpn.webp' : '/Assets/Kartu-depan.webp',
+    isDpnTemplate ? '/Assets/Kartu-depan.webp' : '/Assets/Kartu-dpn.webp',
+    '/Assets/Kartu-depan.png',
   ].filter(Boolean) as string[];
 
   let bgImg: HTMLImageElement | null = null;
@@ -69,7 +79,6 @@ export async function renderFrontCardToCanvas(
   if (bgImg) {
     ctx.drawImage(bgImg, 0, 0, width, height);
   } else {
-    // Fallback if background image couldn't load
     const grad = ctx.createLinearGradient(0, 0, 0, height);
     grad.addColorStop(0, '#032e20');
     grad.addColorStop(0.5, '#064e3b');
@@ -79,31 +88,40 @@ export async function renderFrontCardToCanvas(
   }
 
   // 2. Draw Student Photo inside the Mihrab Arch Window
-  // Coordinates based on 848x1264 asset:
-  // Arch inner: x=200 to 648 (w=448), y=242 to 690 (h=448)
-  const archX = 200;
-  const archY = 242;
-  const archW = 448;
-  const archH = 448;
+  let archX: number, archY: number, archW: number, archH: number;
+  if (isDpnTemplate) {
+    // Exact mapping for 1024x1536 (2x scale of 512x768):
+    // 512x768 arch: x=155..355 (w=200), y=215..535 (h=320)
+    archX = 306;
+    archY = 428;
+    archW = 412;
+    archH = 638;
+  } else {
+    // 848x1264 layout
+    archX = 200;
+    archY = 242;
+    archW = 448;
+    archH = 448;
+  }
 
   ctx.save();
   ctx.beginPath();
-  // Islamic arch path: straight bottom, vertical sides, and curved dome at top
+  // Islamic arch dome path: straight bottom, vertical sides, and curved dome at top
+  const domeHeight = isDpnTemplate ? 230 : 160;
   ctx.moveTo(archX, archY + archH);
-  ctx.lineTo(archX, archY + 160);
-  ctx.bezierCurveTo(archX, archY - 10, archX + archW, archY - 10, archX + archW, archY + 160);
+  ctx.lineTo(archX, archY + domeHeight);
+  ctx.bezierCurveTo(archX, archY - 10, archX + archW, archY - 10, archX + archW, archY + domeHeight);
   ctx.lineTo(archX + archW, archY + archH);
   ctx.closePath();
   ctx.clip();
 
-  // Background behind photo (in case photo is transparent)
+  // Background behind photo
   ctx.fillStyle = '#064e3b';
   ctx.fillRect(archX, archY, archW, archH);
 
   if (student.avatar_url) {
     try {
       const avatarImg = await loadImage(student.avatar_url);
-      // Center and cover the photo in the arch
       const imgAspect = avatarImg.width / avatarImg.height;
       const boxAspect = archW / archH;
       let drawW = archW;
@@ -116,7 +134,7 @@ export async function renderFrontCardToCanvas(
         drawX = archX - (drawW - archW) / 2;
       } else {
         drawH = archW / imgAspect;
-        drawY = archY; // align to top
+        drawY = archY;
       }
 
       ctx.drawImage(avatarImg, drawX, drawY, drawW, drawH);
@@ -129,47 +147,63 @@ export async function renderFrontCardToCanvas(
   ctx.restore();
 
   // 3. Draw Student Name inside the White Ribbon
-  // Asset ribbon center: x = 424, y = 798
-  ctx.fillStyle = '#0f172a';
-  ctx.font = '900 28px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(student.name.toUpperCase(), 424, 798, 520);
+  if (isDpnTemplate) {
+    // 1024x1536 ribbon center: x = 512, y = 1130
+    ctx.fillStyle = '#0f172a';
+    ctx.font = '900 38px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(student.name.toUpperCase(), 512, 1130, 720);
+    // User explicitly requested: "Tambahkan foto dan nama saja jangan edit assetnya"
+    // No Kelas & NIS drawn!
+  } else {
+    // 848x1264 ribbon center: x = 424, y = 798
+    ctx.fillStyle = '#0f172a';
+    ctx.font = '900 28px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(student.name.toUpperCase(), 424, 798, 520);
 
-  // 4. Draw Class & NIS inside the Green Pill Badge
-  // Asset green pill center: x = 424, y = 856
-  ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 19px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  const classText = student.class ? (student.class.toLowerCase().startsWith('kelas') ? student.class : `Kelas ${student.class}`) : '';
-  const label = classText ? `${classText.toUpperCase()}  •  NIS: ${student.nis}` : `NIS: ${student.nis}`;
-  ctx.fillText(label, 424, 856, 420);
+    // 4. Draw Class & NIS inside the Green Pill Badge (standard Ribath template only)
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 19px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const classText = student.class ? (student.class.toLowerCase().startsWith('kelas') ? student.class : `Kelas ${student.class}`) : '';
+    const label = classText ? `${classText.toUpperCase()}  •  NIS: ${student.nis}` : `NIS: ${student.nis}`;
+    ctx.fillText(label, 424, 856, 420);
+  }
 
   return canvas;
 }
 
 /**
- * Render Back Card to an HTML Canvas at 848 x 1264 px (native asset resolution)
+ * Render Back Card to an HTML Canvas
  */
 export async function renderBackCardToCanvas(
   student: StudentCardInfo,
   config: CardRenderConfig
 ): Promise<HTMLCanvasElement> {
-  const width = 848;
-  const height = 1264;
+  const isBlkngTemplate =
+    config.onlyPhotoAndName ||
+    config.backBgUrl === '/Assets/Kartu-blkng.webp' ||
+    Boolean(config.backBgUrl?.includes('Kartu-blkng'));
+
+  const width = isBlkngTemplate ? 1024 : 848;
+  const height = isBlkngTemplate ? 1536 : 1264;
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Canvas 2D context not available');
 
-  // 1. Draw background image containing header, arch, white QR box, gold badge, and Quran verse
+  // 1. Draw background image
+  const primaryBg = config.backBgUrl || (isBlkngTemplate ? '/Assets/Kartu-blkng.webp' : '/Assets/Kartublakang.webp');
   const candidateUrls = [
-    config.backBgUrl,
-    '/Assets/Kartublakang.webp',
-    '/Assets/Kartu-blkng.webp',
-    '/Assets/Kartublakang.png'
+    primaryBg,
+    isBlkngTemplate ? '/Assets/Kartu-blkng.webp' : '/Assets/Kartublakang.webp',
+    isBlkngTemplate ? '/Assets/Kartublakang.webp' : '/Assets/Kartu-blkng.webp',
+    '/Assets/Kartublakang.png',
   ].filter(Boolean) as string[];
 
   let bgImg: HTMLImageElement | null = null;
@@ -192,11 +226,19 @@ export async function renderBackCardToCanvas(
   }
 
   // 2. Draw QR Code inside the Native White Box
-  // The asset's white box is from x=228 to 619 (w=391), y=370 to 749 (h=379)
-  // With 22px internal padding for clean framing:
-  const qrX = 250;
-  const qrY = 392;
-  const qrSize = 348;
+  let qrX: number, qrY: number, qrSize: number;
+  if (isBlkngTemplate) {
+    // 1024x1536 box is x=306..718 (w=412), y=578..958 (h=380)
+    // QR code with clean padding inside box:
+    qrSize = 340;
+    qrX = 306 + (412 - qrSize) / 2;
+    qrY = 578 + (380 - qrSize) / 2;
+  } else {
+    // 848x1264 layout
+    qrX = 250;
+    qrY = 392;
+    qrSize = 348;
+  }
 
   const qrData = `${student.nis},${config.schoolCode}`;
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=350x350&data=${encodeURIComponent(qrData)}`;
@@ -209,7 +251,7 @@ export async function renderBackCardToCanvas(
     ctx.font = 'bold 20px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('QR Code Gagal Dimuat', 424, 560);
+    ctx.fillText('QR Code Gagal Dimuat', width / 2, height / 2);
   }
 
   return canvas;

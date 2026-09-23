@@ -83,7 +83,7 @@ export default function PrintCardsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   
   // Customization States
-  const [cardTemplate, setCardTemplate] = useState('santri-ribath'); // Default to new Ribath template
+  const [cardTemplate, setCardTemplate] = useState('santri-dpn-blkng'); // Default to Kartu-dpn & Kartu-blkng template
   const [previewSide, setPreviewSide] = useState<'both' | 'front' | 'back'>('both');
   const [printMode, setPrintMode] = useState<'duplex' | 'side-by-side' | 'front-only' | 'back-only'>('duplex');
   const [accentColor, setAccentColor] = useState('#064e3b');
@@ -326,7 +326,10 @@ export default function PrintCardsPage() {
       const studentsToPrint = students.filter(s => selectedIds.includes(s.id));
       const schoolCode = profile.school_code;
 
-      if (cardTemplate === 'santri-ribath') {
+      const isDpnBlkng = cardTemplate === 'santri-dpn-blkng';
+      const isSantriTemplate = isDpnBlkng || cardTemplate === 'santri-ribath';
+
+      if (isSantriTemplate) {
         // Vertical Portrait Cards (54mm x 85.6mm standard CR80 ISO format)
         const cardW = 54;
         const cardH = 85.6;
@@ -340,8 +343,9 @@ export default function PrintCardsPage() {
 
         const config = {
           schoolCode,
-          frontBgUrl: '/Assets/Kartu-depan.webp',
-          backBgUrl: '/Assets/Kartublakang.webp',
+          frontBgUrl: isDpnBlkng ? '/Assets/Kartu-dpn.webp' : '/Assets/Kartu-depan.webp',
+          backBgUrl: isDpnBlkng ? '/Assets/Kartu-blkng.webp' : '/Assets/Kartublakang.webp',
+          onlyPhotoAndName: isDpnBlkng,
         };
 
         if (printMode === 'side-by-side') {
@@ -496,14 +500,18 @@ export default function PrintCardsPage() {
     ? `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(`${previewStudent.nis},${profile.school_code}`)}` 
     : '';
 
+  const isDpnBlkng = cardTemplate === 'santri-dpn-blkng';
+  const isSantriTemplate = isDpnBlkng || cardTemplate === 'santri-ribath';
+
   const santriCardData: SantriCardData = {
     name: previewStudent?.name || 'M. SYAHRUL RIDHO',
     nis: previewStudent?.nis || '12345678',
     className: previewStudent?.class || 'XII MIPA 1',
     avatarUrl: previewStudent?.avatar_url,
     qrUrl: qrPreviewUrl,
-    frontBgUrl: '/Assets/Kartu-depan.webp',
-    backBgUrl: '/Assets/Kartublakang.webp',
+    frontBgUrl: isDpnBlkng ? '/Assets/Kartu-dpn.webp' : '/Assets/Kartu-depan.webp',
+    backBgUrl: isDpnBlkng ? '/Assets/Kartu-blkng.webp' : '/Assets/Kartublakang.webp',
+    onlyPhotoAndName: isDpnBlkng,
   };
 
   return (
@@ -520,7 +528,7 @@ export default function PrintCardsPage() {
             <div className="flex items-center gap-2">
               <h2 className="text-xl sm:text-2xl font-black tracking-tight text-gray-900">Cetak Kartu Siswa & Santri</h2>
               <Badge className="bg-emerald-600 text-white border-none text-[10px] font-bold px-2 py-0.5">
-                Template Baru RNH
+                {isDpnBlkng ? 'Template Foto & Nama' : 'Template RNH'}
               </Badge>
             </div>
             <p className="text-[11px] text-muted-foreground uppercase font-bold tracking-wider mt-0.5">
@@ -556,23 +564,31 @@ export default function PrintCardsPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="santri-ribath" className="font-bold text-emerald-800">
-                      ★ Santri Ribath (Emerald Gold - Sesuai Foto)
+                    <SelectItem value="santri-dpn-blkng" className="font-bold text-emerald-800">
+                      ★ Kartu Santri (Kartu-dpn & Kartu-blkng - Foto & Nama)
+                    </SelectItem>
+                    <SelectItem value="santri-ribath" className="font-semibold text-emerald-700">
+                      Santri Ribath (Kartu-depan & Kartublakang - Lengkap)
                     </SelectItem>
                     <SelectItem value="standard">Standar (Klasik Tabungan)</SelectItem>
                     <SelectItem value="modern">Modern (Sidebar Minimal)</SelectItem>
                     <SelectItem value="elegant">Elegan (Header Penuh)</SelectItem>
                   </SelectContent>
                 </Select>
+                {cardTemplate === 'santri-dpn-blkng' && (
+                  <p className="text-[10px] text-emerald-700 bg-emerald-50 p-2.5 rounded-xl font-medium leading-relaxed border border-emerald-100">
+                    Template menggunakan aset <strong>Kartu-dpn.webp</strong> &amp; <strong>Kartu-blkng.webp</strong>. Hanya menambahkan <strong>Foto dan Nama</strong> santri tanpa mengubah aset asli.
+                  </p>
+                )}
                 {cardTemplate === 'santri-ribath' && (
                   <p className="text-[10px] text-emerald-700 bg-emerald-50 p-2.5 rounded-xl font-medium leading-relaxed border border-emerald-100">
-                    Template menggunakan aset <strong>Kartu-depan.webp</strong> &amp; <strong>Kartublakang.webp</strong> dengan bingkai kubah Mihrab dan aksen emas.
+                    Template menggunakan aset <strong>Kartu-depan.webp</strong> &amp; <strong>Kartublakang.webp</strong> dengan bingkai kubah Mihrab dan aksen emas lengkap (Foto, Nama, Kelas &amp; NIS).
                   </p>
                 )}
               </div>
 
               {/* Print Layout Mode */}
-              {cardTemplate === 'santri-ribath' && (
+              {isSantriTemplate && (
                 <div className="space-y-2">
                   <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
                     Format &amp; Mode Cetak PDF
@@ -600,14 +616,16 @@ export default function PrintCardsPage() {
               )}
 
               {/* Template Configuration Details */}
-              {cardTemplate === 'santri-ribath' ? (
+              {isSantriTemplate ? (
                 <div className="space-y-3 pt-2 border-t border-gray-100">
                   <div className="bg-emerald-50/70 p-3.5 rounded-2xl border border-emerald-100/80 space-y-2 text-xs">
                     <span className="text-[10px] font-black uppercase tracking-widest text-emerald-800 flex items-center gap-1.5">
-                      <Sparkles className="w-3.5 h-3.5 text-emerald-600" /> Aset Desain Resmi Terintegrasi
+                      <Sparkles className="w-3.5 h-3.5 text-emerald-600" /> Aset Desain Terintegrasi
                     </span>
                     <p className="text-[11px] text-emerald-900 leading-relaxed font-medium">
-                      Aset latar belakang telah memuat identitas lembaga, logo perisai, kaligrafi, dan ayat Al-Qur&apos;an secara permanen.
+                      {isDpnBlkng
+                        ? "Aset resmi Kartu-dpn.webp & Kartu-blkng.webp digunakan secara langsung tanpa modifikasi file aset. Hanya menambahkan foto dan nama santri."
+                        : "Aset latar belakang telah memuat identitas lembaga, logo perisai, kaligrafi, dan ayat Al-Qur'an secara permanen."}
                     </p>
                     <div className="space-y-1.5 pt-1 text-[10.5px] text-emerald-950 font-semibold">
                       <div className="flex items-center gap-2">
@@ -618,10 +636,12 @@ export default function PrintCardsPage() {
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                         <span><strong>Nama Santri:</strong> Presisi di pita nama</span>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                        <span><strong>Kelas &amp; NIS:</strong> Di badge nomor induk</span>
-                      </div>
+                      {!isDpnBlkng && (
+                        <div className="flex items-center gap-2">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                          <span><strong>Kelas &amp; NIS:</strong> Di badge nomor induk</span>
+                        </div>
+                      )}
                       <div className="flex items-center gap-2">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                         <span><strong>QR Code:</strong> Terpasang rapi di kotak putih belakang</span>
@@ -810,7 +830,7 @@ export default function PrintCardsPage() {
               <h3 className="font-bold flex items-center gap-2 text-muted-foreground uppercase text-[10px] tracking-[0.2em]">
                 <Eye className="h-3.5 w-3.5 text-emerald-600" /> Live Card Preview
               </h3>
-              {cardTemplate === 'santri-ribath' && (
+              {isSantriTemplate && (
                 <div className="flex bg-gray-100 p-0.5 rounded-xl">
                   <button
                     onClick={() => setPreviewSide('both')}
@@ -844,7 +864,7 @@ export default function PrintCardsPage() {
             </div>
 
             {/* Preview Display Container */}
-            {cardTemplate === 'santri-ribath' ? (
+            {isSantriTemplate ? (
               <div className="space-y-4">
                 {previewSide === 'both' ? (
                   /* Side by Side Preview matching user image */
