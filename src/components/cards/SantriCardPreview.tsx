@@ -42,6 +42,33 @@ export function SantriCardPreview({
     backBgUrl = '/Assets/Kartublakang.webp',
   } = data;
 
+  const [frontSrc, setFrontSrc] = React.useState(frontBgUrl);
+  const [backSrc, setBackSrc] = React.useState(backBgUrl);
+
+  React.useEffect(() => {
+    setFrontSrc(frontBgUrl);
+  }, [frontBgUrl]);
+
+  React.useEffect(() => {
+    setBackSrc(backBgUrl);
+  }, [backBgUrl]);
+
+  const handleFrontError = () => {
+    if (frontSrc === '/Assets/Kartu-depan.webp') {
+      setFrontSrc('/Assets/Kartu-dpn.webp');
+    } else if (frontSrc === '/Assets/Kartu-dpn.webp') {
+      setFrontSrc('/Assets/Kartu-depan.png');
+    }
+  };
+
+  const handleBackError = () => {
+    if (backSrc === '/Assets/Kartublakang.webp') {
+      setBackSrc('/Assets/Kartu-blkng.webp');
+    } else if (backSrc === '/Assets/Kartu-blkng.webp') {
+      setBackSrc('/Assets/Kartublakang.png');
+    }
+  };
+
   // Render Front Side of the Card
   if (side === 'front') {
     return (
@@ -52,8 +79,9 @@ export function SantriCardPreview({
       >
         {/* 1. Base Template Asset (contains header, logo, arch frame, ribbon, pillars, footer) */}
         <img
-          src={frontBgUrl}
+          src={frontSrc}
           alt="Kartu Santri Depan"
+          onError={handleFrontError}
           className="absolute inset-0 w-full h-full object-cover z-0 pointer-events-none"
           referrerPolicy="no-referrer"
         />
@@ -134,8 +162,9 @@ export function SantriCardPreview({
     >
       {/* 1. Base Template Asset (contains header, golden arch, white container, gold badge, Quran verse) */}
       <img
-        src={backBgUrl}
+        src={backSrc}
         alt="Kartu Santri Belakang"
+        onError={handleBackError}
         className="absolute inset-0 w-full h-full object-cover z-0 pointer-events-none"
         referrerPolicy="no-referrer"
       />

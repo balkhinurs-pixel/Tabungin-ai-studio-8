@@ -51,11 +51,24 @@ export async function renderFrontCardToCanvas(
   if (!ctx) throw new Error('Canvas 2D context not available');
 
   // 1. Draw background image containing all card borders, headers, arch, ribbon, and pillars
-  const bgUrl = config.frontBgUrl || '/Assets/Kartu-depan.webp';
-  try {
-    const bgImg = await loadImage(bgUrl);
+  const candidateUrls = [
+    config.frontBgUrl,
+    '/Assets/Kartu-depan.webp',
+    '/Assets/Kartu-dpn.webp',
+    '/Assets/Kartu-depan.png'
+  ].filter(Boolean) as string[];
+
+  let bgImg: HTMLImageElement | null = null;
+  for (const url of candidateUrls) {
+    try {
+      bgImg = await loadImage(url);
+      if (bgImg) break;
+    } catch {}
+  }
+
+  if (bgImg) {
     ctx.drawImage(bgImg, 0, 0, width, height);
-  } catch {
+  } else {
     // Fallback if background image couldn't load
     const grad = ctx.createLinearGradient(0, 0, 0, height);
     grad.addColorStop(0, '#032e20');
@@ -152,11 +165,24 @@ export async function renderBackCardToCanvas(
   if (!ctx) throw new Error('Canvas 2D context not available');
 
   // 1. Draw background image containing header, arch, white QR box, gold badge, and Quran verse
-  const bgUrl = config.backBgUrl || '/Assets/Kartublakang.webp';
-  try {
-    const bgImg = await loadImage(bgUrl);
+  const candidateUrls = [
+    config.backBgUrl,
+    '/Assets/Kartublakang.webp',
+    '/Assets/Kartu-blkng.webp',
+    '/Assets/Kartublakang.png'
+  ].filter(Boolean) as string[];
+
+  let bgImg: HTMLImageElement | null = null;
+  for (const url of candidateUrls) {
+    try {
+      bgImg = await loadImage(url);
+      if (bgImg) break;
+    } catch {}
+  }
+
+  if (bgImg) {
     ctx.drawImage(bgImg, 0, 0, width, height);
-  } catch {
+  } else {
     const grad = ctx.createLinearGradient(0, 0, 0, height);
     grad.addColorStop(0, '#032e20');
     grad.addColorStop(0.5, '#064e3b');
