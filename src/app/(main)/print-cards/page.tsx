@@ -565,7 +565,7 @@ export default function PrintCardsPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="santri-dpn-blkng" className="font-bold text-emerald-800">
-                      ★ Kartu Santri (Kartu-dpn & Kartu-blkng - Foto & Nama)
+                      ★ Kartu Santri (Kartu-dpn & Kartu-blkng - Foto, Nama & NIS)
                     </SelectItem>
                     <SelectItem value="santri-ribath" className="font-semibold text-emerald-700">
                       Santri Ribath (Kartu-depan & Kartublakang - Lengkap)
@@ -577,7 +577,7 @@ export default function PrintCardsPage() {
                 </Select>
                 {cardTemplate === 'santri-dpn-blkng' && (
                   <p className="text-[10px] text-emerald-700 bg-emerald-50 p-2.5 rounded-xl font-medium leading-relaxed border border-emerald-100">
-                    Template menggunakan aset <strong>Kartu-dpn.webp</strong> &amp; <strong>Kartu-blkng.webp</strong>. Hanya menambahkan <strong>Foto dan Nama</strong> santri tanpa mengubah aset asli.
+                    Template menggunakan aset <strong>Kartu-dpn.webp</strong> &amp; <strong>Kartu-blkng.webp</strong>. Menampilkan <strong>Foto, Nama, dan Nomor NIS</strong> santri secara presisi.
                   </p>
                 )}
                 {cardTemplate === 'santri-ribath' && (
@@ -624,7 +624,7 @@ export default function PrintCardsPage() {
                     </span>
                     <p className="text-[11px] text-emerald-900 leading-relaxed font-medium">
                       {isDpnBlkng
-                        ? "Aset resmi Kartu-dpn.webp & Kartu-blkng.webp digunakan secara langsung tanpa modifikasi file aset. Hanya menambahkan foto dan nama santri."
+                        ? "Aset resmi Kartu-dpn.webp & Kartu-blkng.webp digunakan secara langsung tanpa modifikasi aset latar. Menampilkan foto, nama santri, dan nomor NIS."
                         : "Aset latar belakang telah memuat identitas lembaga, logo perisai, kaligrafi, dan ayat Al-Qur'an secara permanen."}
                     </p>
                     <div className="space-y-1.5 pt-1 text-[10.5px] text-emerald-950 font-semibold">
@@ -636,12 +636,10 @@ export default function PrintCardsPage() {
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                         <span><strong>Nama Santri:</strong> Presisi di pita nama</span>
                       </div>
-                      {!isDpnBlkng && (
-                        <div className="flex items-center gap-2">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                          <span><strong>Kelas &amp; NIS:</strong> Di badge nomor induk</span>
-                        </div>
-                      )}
+                      <div className="flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                        <span><strong>Nomor NIS:</strong> Ditata tepat di bawah nama santri</span>
+                      </div>
                       <div className="flex items-center gap-2">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                         <span><strong>QR Code:</strong> Terpasang rapi di kotak putih belakang</span>

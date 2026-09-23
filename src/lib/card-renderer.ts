@@ -154,8 +154,14 @@ export async function renderFrontCardToCanvas(
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(student.name.toUpperCase(), 512, 1130, 720);
-    // User explicitly requested: "Tambahkan foto dan nama saja jangan edit assetnya"
-    // No Kelas & NIS drawn!
+    // 4. Draw NIS Number inside the Green Pill Badge below Name
+    if (student.nis) {
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 24px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`NIS: ${student.nis}`, 512, 1204, 480);
+    }
   } else {
     // 848x1264 ribbon center: x = 424, y = 798
     ctx.fillStyle = '#0f172a';

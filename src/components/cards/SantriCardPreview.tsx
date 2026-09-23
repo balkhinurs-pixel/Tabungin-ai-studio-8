@@ -162,8 +162,22 @@ export function SantriCardPreview({
           </span>
         </div>
 
-        {/* 4. Kelas & NIS in the Green Pill Slot (ONLY shown if NOT isDpnBlkng) */}
-        {!isDpnBlkng && (
+        {/* 4. NIS / Info Pill below Name */}
+        {isDpnBlkng ? (
+          <div 
+            className="absolute z-10 flex items-center justify-center pointer-events-none px-1 text-center"
+            style={{
+              left: '25%',
+              top: '76.6%',
+              width: '50%',
+              height: '3.6%',
+            }}
+          >
+            <span className="text-[7.5px] sm:text-[9.5px] font-extrabold tracking-wider text-white truncate leading-none drop-shadow-sm">
+              NIS: {nis}
+            </span>
+          </div>
+        ) : (
           <div 
             className="absolute z-10 flex items-center justify-center pointer-events-none px-1 text-center"
             style={{
