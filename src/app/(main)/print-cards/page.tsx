@@ -339,13 +339,7 @@ export default function PrintCardsPage() {
         const cardsPerPage = cols * rows; // 9 cards per page
 
         const config = {
-          schoolName,
-          schoolType,
-          schoolLocation,
-          schoolMotto,
-          quote: cardQuote,
           schoolCode,
-          logoUrl: customLogo,
           frontBgUrl: '/Assets/Kartu-depan.webp',
           backBgUrl: '/Assets/Kartublakang.webp',
         };
@@ -507,12 +501,6 @@ export default function PrintCardsPage() {
     nis: previewStudent?.nis || '12345678',
     className: previewStudent?.class || 'XII MIPA 1',
     avatarUrl: previewStudent?.avatar_url,
-    schoolName,
-    schoolType,
-    schoolLocation,
-    schoolMotto,
-    quote: cardQuote,
-    logoUrl: customLogo,
     qrUrl: qrPreviewUrl,
     frontBgUrl: '/Assets/Kartu-depan.webp',
     backBgUrl: '/Assets/Kartublakang.webp',
@@ -611,107 +599,94 @@ export default function PrintCardsPage() {
                 </div>
               )}
 
-              {/* School Identity Details for Santri Ribath */}
+              {/* Template Configuration Details */}
               {cardTemplate === 'santri-ribath' ? (
-                <div className="space-y-3 pt-1 border-t border-gray-100">
-                  <Label className="text-[10px] font-black uppercase tracking-widest text-emerald-800 flex items-center gap-1.5">
-                    <Settings2 className="w-3.5 h-3.5" /> Data Teks Kartu
-                  </Label>
-
-                  <div className="space-y-2">
-                    <span className="text-[10px] font-bold text-gray-500">Kategori / Institusi:</span>
-                    <Input 
-                      value={schoolType} 
-                      onChange={(e) => setSchoolType(e.target.value)} 
-                      className="h-9 text-xs rounded-lg"
-                      placeholder="PONDOK PESANTREN"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <span className="text-[10px] font-bold text-gray-500">Nama Lembaga:</span>
-                    <Input 
-                      value={schoolName} 
-                      onChange={(e) => setSchoolName(e.target.value)} 
-                      className="h-9 text-xs rounded-lg font-bold"
-                      placeholder="RIBATH NURUL HIDAYAH 2"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <span className="text-[10px] font-bold text-gray-500">Lokasi / Daerah:</span>
-                    <Input 
-                      value={schoolLocation} 
-                      onChange={(e) => setSchoolLocation(e.target.value)} 
-                      className="h-9 text-xs rounded-lg"
-                      placeholder="PANGKAH - TEGAL"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <span className="text-[10px] font-bold text-gray-500">Motto / Slogan:</span>
-                    <Input 
-                      value={schoolMotto} 
-                      onChange={(e) => setSchoolMotto(e.target.value)} 
-                      className="h-9 text-xs rounded-lg"
-                      placeholder="Berilmu | Berakhlak | Berdaya | Untuk Umat"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <span className="text-[10px] font-bold text-gray-500">Kutipan Sisi Belakang:</span>
-                    <Input 
-                      value={cardQuote} 
-                      onChange={(e) => setCardQuote(e.target.value)} 
-                      className="h-9 text-xs rounded-lg italic"
-                      placeholder="Menuntut ilmu adalah jalan menuju ridha Allah"
-                    />
+                <div className="space-y-3 pt-2 border-t border-gray-100">
+                  <div className="bg-emerald-50/70 p-3.5 rounded-2xl border border-emerald-100/80 space-y-2 text-xs">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-emerald-800 flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-emerald-600" /> Aset Desain Resmi Terintegrasi
+                    </span>
+                    <p className="text-[11px] text-emerald-900 leading-relaxed font-medium">
+                      Aset latar belakang telah memuat identitas lembaga, logo perisai, kaligrafi, dan ayat Al-Qur&apos;an secara permanen.
+                    </p>
+                    <div className="space-y-1.5 pt-1 text-[10.5px] text-emerald-950 font-semibold">
+                      <div className="flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                        <span><strong>Foto Santri:</strong> Presisi di dalam Kubah Mihrab</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                        <span><strong>Nama Santri:</strong> Presisi di pita nama</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                        <span><strong>Kelas &amp; NIS:</strong> Di badge nomor induk</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                        <span><strong>QR Code:</strong> Terpasang rapi di kotak putih belakang</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               ) : (
-                <div className="space-y-3">
-                  <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Warna Aksen</Label>
-                  <div className="grid grid-cols-6 gap-2">
-                    {CARD_COLORS.map(color => (
-                      <button
-                        key={color.value}
-                        onClick={() => setAccentColor(color.value)}
-                        className={cn(
-                          "h-8 w-8 rounded-full border-2 transition-all hover:scale-110",
-                          accentColor === color.value ? "border-primary scale-110 shadow-md ring-2 ring-primary/20" : "border-transparent"
-                        )}
-                        style={{ backgroundColor: color.value }}
-                        title={color.name}
-                      />
-                    ))}
+                <div className="space-y-4 pt-1 border-t border-gray-100">
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                      Nama Lembaga / Sekolah
+                    </Label>
+                    <Input 
+                      value={schoolName} 
+                      onChange={(e) => setSchoolName(e.target.value)} 
+                      className="h-10 text-xs rounded-xl"
+                      placeholder="Nama Sekolah"
+                    />
+                  </div>
+
+                  <div className="space-y-3">
+                    <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Warna Aksen</Label>
+                    <div className="grid grid-cols-6 gap-2">
+                      {CARD_COLORS.map(color => (
+                        <button
+                          key={color.value}
+                          onClick={() => setAccentColor(color.value)}
+                          className={cn(
+                            "h-8 w-8 rounded-full border-2 transition-all hover:scale-110",
+                            accentColor === color.value ? "border-primary scale-110 shadow-md ring-2 ring-primary/20" : "border-transparent"
+                          )}
+                          style={{ backgroundColor: color.value }}
+                          title={color.name}
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Logo Upload */}
+                  <div className="space-y-2 pt-2 border-t border-gray-100">
+                    <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Logo Lembaga</Label>
+                    <input type="file" ref={fileInputRef} onChange={handleLogoUpload} accept="image/*" className="hidden" />
+                    <div className="flex gap-2">
+                      <Button 
+                        variant="outline" 
+                        className="flex-1 h-11 rounded-xl border-dashed border-2 hover:bg-emerald-50 hover:border-emerald-500 transition-all text-xs font-bold" 
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        <Upload className="mr-2 h-4 w-4 text-emerald-600" /> {customLogo ? 'Ganti Logo' : 'Unggah Logo'}
+                      </Button>
+                      {customLogo && (
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="text-xs text-red-600 hover:bg-red-50 h-11 px-3 rounded-xl"
+                          onClick={() => setCustomLogo(null)}
+                        >
+                          Reset
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
-
-              {/* Logo Upload */}
-              <div className="space-y-2 pt-2 border-t border-gray-100">
-                <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Logo Lembaga / Pesantren</Label>
-                <input type="file" ref={fileInputRef} onChange={handleLogoUpload} accept="image/*" className="hidden" />
-                <div className="flex gap-2">
-                  <Button 
-                    variant="outline" 
-                    className="flex-1 h-11 rounded-xl border-dashed border-2 hover:bg-emerald-50 hover:border-emerald-500 transition-all text-xs font-bold" 
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    <Upload className="mr-2 h-4 w-4 text-emerald-600" /> {customLogo ? 'Ganti Logo' : 'Unggah Logo'}
-                  </Button>
-                  {customLogo && (
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      className="text-xs text-red-600 hover:bg-red-50 h-11 px-3 rounded-xl"
-                      onClick={() => setCustomLogo(null)}
-                    >
-                      Reset
-                    </Button>
-                  )}
-                </div>
-              </div>
             </CardContent>
           </Card>
 
