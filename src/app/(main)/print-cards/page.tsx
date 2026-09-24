@@ -21,7 +21,8 @@ import {
   Settings2,
   Columns,
   RotateCw,
-  Eye
+  Eye,
+  CheckCircle2
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -527,12 +528,12 @@ export default function PrintCardsPage() {
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-xl sm:text-2xl font-black tracking-tight text-gray-900">Cetak Kartu Siswa & Santri</h2>
-              <Badge className="bg-emerald-600 text-white border-none text-[10px] font-bold px-2 py-0.5">
-                {isDpnBlkng ? 'Template Foto & Nama' : 'Template RNH'}
+              <Badge className="bg-emerald-700 text-white border-none text-[10px] font-bold px-2 py-0.5">
+                Kartu Santri Resmi
               </Badge>
             </div>
             <p className="text-[11px] text-muted-foreground uppercase font-bold tracking-wider mt-0.5">
-              Kustomisasi Identitas, Aksen Emas & Pratinjau Bolak-Balik
+              Format Standar ID Card Santri & Tabungan
             </p>
           </div>
         </div>
@@ -564,27 +565,17 @@ export default function PrintCardsPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="santri-dpn-blkng" className="font-bold text-emerald-800">
-                      ★ Kartu Santri (Kartu-dpn & Kartu-blkng - Foto, Nama & NIS)
+                    <SelectItem value="santri-dpn-blkng" className="font-semibold text-emerald-900">
+                      ★ Kartu Santri Resmi (Foto, Nama & NIS)
                     </SelectItem>
-                    <SelectItem value="santri-ribath" className="font-semibold text-emerald-700">
-                      Santri Ribath (Kartu-depan & Kartublakang - Lengkap)
+                    <SelectItem value="santri-ribath" className="font-medium text-emerald-900">
+                      Kartu Santri Khusus (Format Lengkap)
                     </SelectItem>
-                    <SelectItem value="standard">Standar (Klasik Tabungan)</SelectItem>
-                    <SelectItem value="modern">Modern (Sidebar Minimal)</SelectItem>
-                    <SelectItem value="elegant">Elegan (Header Penuh)</SelectItem>
+                    <SelectItem value="standard">Kartu Tabungan Standar (Lanskap)</SelectItem>
+                    <SelectItem value="modern">Modern Minimalis (Lanskap)</SelectItem>
+                    <SelectItem value="elegant">Elegan Prestise (Lanskap)</SelectItem>
                   </SelectContent>
                 </Select>
-                {cardTemplate === 'santri-dpn-blkng' && (
-                  <p className="text-[10px] text-emerald-700 bg-emerald-50 p-2.5 rounded-xl font-medium leading-relaxed border border-emerald-100">
-                    Template menggunakan aset <strong>Kartu-dpn.webp</strong> &amp; <strong>Kartu-blkng.webp</strong>. Menampilkan <strong>Foto, Nama, dan Nomor NIS</strong> santri secara presisi.
-                  </p>
-                )}
-                {cardTemplate === 'santri-ribath' && (
-                  <p className="text-[10px] text-emerald-700 bg-emerald-50 p-2.5 rounded-xl font-medium leading-relaxed border border-emerald-100">
-                    Template menggunakan aset <strong>Kartu-depan.webp</strong> &amp; <strong>Kartublakang.webp</strong> dengan bingkai kubah Mihrab dan aksen emas lengkap (Foto, Nama, Kelas &amp; NIS).
-                  </p>
-                )}
               </div>
 
               {/* Print Layout Mode */}
@@ -615,34 +606,34 @@ export default function PrintCardsPage() {
                 </div>
               )}
 
-              {/* Template Configuration Details */}
+              {/* Template Specifications */}
               {isSantriTemplate ? (
-                <div className="space-y-3 pt-2 border-t border-gray-100">
-                  <div className="bg-emerald-50/70 p-3.5 rounded-2xl border border-emerald-100/80 space-y-2 text-xs">
-                    <span className="text-[10px] font-black uppercase tracking-widest text-emerald-800 flex items-center gap-1.5">
-                      <Sparkles className="w-3.5 h-3.5 text-emerald-600" /> Aset Desain Terintegrasi
-                    </span>
-                    <p className="text-[11px] text-emerald-900 leading-relaxed font-medium">
-                      {isDpnBlkng
-                        ? "Aset resmi Kartu-dpn.webp & Kartu-blkng.webp digunakan secara langsung tanpa modifikasi aset latar. Menampilkan foto, nama santri, dan nomor NIS."
-                        : "Aset latar belakang telah memuat identitas lembaga, logo perisai, kaligrafi, dan ayat Al-Qur'an secara permanen."}
-                    </p>
-                    <div className="space-y-1.5 pt-1 text-[10.5px] text-emerald-950 font-semibold">
-                      <div className="flex items-center gap-2">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                        <span><strong>Foto Santri:</strong> Presisi di dalam Kubah Mihrab</span>
+                <div className="pt-2 border-t border-gray-100">
+                  <div className="rounded-2xl bg-gray-50/80 border border-gray-100 p-3.5 space-y-2.5">
+                    <div className="flex items-center justify-between text-[11px] font-bold text-gray-700">
+                      <span className="flex items-center gap-1.5 text-emerald-800">
+                        <Sparkles className="w-3.5 h-3.5 text-emerald-600" /> Spesifikasi ID Card
+                      </span>
+                      <span className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md font-semibold border border-emerald-100">
+                        CR-80 (54 × 85.6 mm)
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-[11px] text-gray-600 font-medium pt-1">
+                      <div className="flex items-center gap-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span>Foto &amp; Nama Santri</span>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                        <span><strong>Nama Santri:</strong> Presisi di pita nama</span>
+                      <div className="flex items-center gap-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span>Nomor Induk (NIS)</span>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                        <span><strong>Nomor NIS:</strong> Ditata tepat di bawah nama santri</span>
+                      <div className="flex items-center gap-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span>QR Code Terverifikasi</span>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                        <span><strong>QR Code:</strong> Terpasang rapi di kotak putih belakang</span>
+                      <div className="flex items-center gap-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span>Resolusi 300 DPI</span>
                       </div>
                     </div>
                   </div>
@@ -955,12 +946,12 @@ export default function PrintCardsPage() {
               </div>
             )}
 
-            {/* Instruction Tip */}
-            <div className="bg-emerald-50/70 p-4 rounded-2xl border border-emerald-100 flex gap-3 text-[11px] text-emerald-900 leading-relaxed font-medium">
-              <Sparkles className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
-              <div>
-                <strong>Aset Siap Cetak:</strong> Template menggunakan aset latar belakang <code>public/Assets/Kartu-depan.webp</code> dan <code>public/Assets/Kartublakang.webp</code> dengan resolusi tinggi.
-              </div>
+            {/* Professional Printing Guide */}
+            <div className="bg-gray-50/80 p-3.5 rounded-2xl border border-gray-100 flex items-center gap-3 text-[11px] text-gray-600 font-medium">
+              <Printer className="h-4 w-4 text-emerald-600 shrink-0" />
+              <p>
+                <strong>Petunjuk Cetak:</strong> Gunakan kertas PVC Card atau Art Paper 260–310 gsm untuk menghasilkan kartu santri yang kaku, tajam, dan tahan lama.
+              </p>
             </div>
           </div>
         </div>
