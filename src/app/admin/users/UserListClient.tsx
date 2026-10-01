@@ -2,11 +2,12 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import type { Profile } from '@/types';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Pencil, Loader2, Save } from 'lucide-react';
+import { Pencil, Loader2, Save, Receipt } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -94,9 +95,16 @@ export default function UserListClient({ initialUsers }: UserListClientProps) {
                   </Badge>
                 </TableCell>
                 <TableCell className="text-right">
-                  <Button variant="ghost" size="icon" onClick={() => handleEditClick(user)}>
-                    <Pencil className="h-4 w-4" />
-                  </Button>
+                  <div className="flex items-center justify-end gap-1">
+                    <Button variant="ghost" size="icon" asChild title="Lihat & Pantau Transaksi Akun Ini">
+                      <Link href={`/admin/transactions?userId=${user.id}`}>
+                        <Receipt className="h-4 w-4 text-emerald-600" />
+                      </Link>
+                    </Button>
+                    <Button variant="ghost" size="icon" onClick={() => handleEditClick(user)} title="Edit Plan & Kuota">
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </TableCell>
               </TableRow>
             ))}
