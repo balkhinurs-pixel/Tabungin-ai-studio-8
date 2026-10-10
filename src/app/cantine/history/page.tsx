@@ -104,13 +104,36 @@ export default function CantineHistoryPage() {
                 { content: tx.amount.toLocaleString('id-ID'), styles: { halign: 'right' } }
             ]),
             foot: [
-                [{ content: 'RINGKASAN TOTAL', colSpan: 4, styles: { fontStyle: 'bold', halign: 'right' } }, 
-                 { content: totalOmzet.toLocaleString('id-ID'), styles: { fontStyle: 'bold', halign: 'right' } }],
-                [{ content: 'TOTAL BELUM CAIR (PIUTANG)', colSpan: 4, styles: { fontStyle: 'bold', halign: 'right', textColor: [180, 0, 0] } }, 
-                 { content: totalUnsettled.toLocaleString('id-ID'), styles: { fontStyle: 'bold', halign: 'right', textColor: [180, 0, 0] } }]
+                [
+                  { content: 'RINGKASAN TOTAL PENJUALAN', colSpan: 4, styles: { fontStyle: 'bold', halign: 'right', textColor: [0, 0, 0], fontSize: 10 } }, 
+                  { content: `Rp ${totalOmzet.toLocaleString('id-ID')}`, styles: { fontStyle: 'bold', halign: 'right', textColor: [0, 0, 0], fontSize: 10 } }
+                ],
+                [
+                  { content: 'TOTAL BELUM CAIR (PIUTANG)', colSpan: 4, styles: { fontStyle: 'bold', halign: 'right', textColor: [0, 0, 0], fontSize: 10 } }, 
+                  { content: `Rp ${totalUnsettled.toLocaleString('id-ID')}`, styles: { fontStyle: 'bold', halign: 'right', textColor: [0, 0, 0], fontSize: 10 } }
+                ]
             ],
-            theme: 'striped',
-            headStyles: { fillColor: [249, 115, 22] }
+            theme: 'grid',
+            styles: {
+                textColor: [0, 0, 0],
+                fontSize: 9,
+                lineColor: [40, 40, 40],
+                lineWidth: 0.2
+            },
+            headStyles: { 
+                fillColor: [0, 0, 0], 
+                textColor: [255, 255, 255], 
+                fontStyle: 'bold',
+                lineColor: [0, 0, 0] 
+            },
+            footStyles: { 
+                fillColor: [240, 240, 240], 
+                textColor: [0, 0, 0], 
+                fontStyle: 'bold', 
+                fontSize: 10,
+                lineColor: [0, 0, 0],
+                lineWidth: 0.3
+            }
         });
 
         doc.save(`laporan-penjualan-${merchantName.toLowerCase()}.pdf`);

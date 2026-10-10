@@ -110,8 +110,9 @@ export default function FilterControls({ reportData, period, totals }: FilterCon
                 { content: totals.totalOutcome.toLocaleString('id-ID'), styles: { halign: 'right', fontStyle: 'bold' } },
                 { content: totals.totalBalance.toLocaleString('id-ID'), styles: { halign: 'right', fontStyle: 'bold' } }]
             ],
-            headStyles: { fillColor: [29, 78, 133], textColor: 255, fontStyle: 'bold' },
-            footStyles: { fillColor: [241, 245, 249], fontStyle: 'bold' },
+            headStyles: { fillColor: [0, 0, 0], textColor: [255, 255, 255], fontStyle: 'bold' },
+            footStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontStyle: 'bold' },
+            styles: { textColor: [0, 0, 0] },
             theme: 'grid'
         });
 
