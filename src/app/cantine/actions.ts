@@ -14,6 +14,7 @@ export async function getCantineTransactionsAction(filters?: {
     dateFrom?: string;
     dateTo?: string;
     unsettledOnly?: boolean;
+    paymentMethod?: 'ALL' | 'CASH' | 'TABUNGAN';
 }) {
     const supabaseUser = createClient();
     const { data: { user } } = await supabaseUser.auth.getUser();
@@ -40,6 +41,13 @@ export async function getCantineTransactionsAction(filters?: {
         query = query.eq('is_settled', false);
     }
 
+    // Filter Metode Pembayaran
+    if (filters?.paymentMethod === 'CASH') {
+        query = query.is('student_id', null);
+    } else if (filters?.paymentMethod === 'TABUNGAN') {
+        query = query.not('student_id', 'is', null);
+    }
+
     // Filter Rentang Tanggal
     if (filters?.dateFrom) {
         query = query.gte('created_at', `${filters.dateFrom}T00:00:00Z`);
@@ -55,7 +63,12 @@ export async function getCantineTransactionsAction(filters?: {
         return [];
     }
 
-    return data || [];
+    // Enrich with computed payment type
+    return (data || []).map((tx: any) => ({
+        ...tx,
+        is_cash: !tx.student_id,
+        payment_method: !tx.student_id ? 'CASH' : 'TABUNGAN'
+    }));
 }
 
 /**
@@ -577,25 +590,59 @@ export async function processCashPaymentAction(params: {
 export async function getCanteenDailySummaryAction() {
     const supabaseUser = createClient();
     const { data: { user } } = await supabaseUser.auth.getUser();
-    if (!user) return { todayRevenue: 0, todayCount: 0, topItem: '-' };
+    if (!user) return { 
+        todayRevenue: 0, 
+        todayCashRevenue: 0, 
+        todayTabunganRevenue: 0, 
+        todayUnsettled: 0,
+        todayCount: 0, 
+        topItem: '-',
+        lowStockCount: 0,
+        outOfStockCount: 0
+    };
 
     const supabaseAdmin = getSupabaseAdmin();
     try {
         const todayStart = new Date();
         todayStart.setHours(0,0,0,0);
 
-        const { data: txs } = await supabaseAdmin
-            .from('transactions')
-            .select('amount, description, created_at')
-            .eq('user_id', user.id)
-            .eq('category', 'BELANJA_KANTIN')
-            .gte('created_at', todayStart.toISOString());
+        // Fetch transactions today & items in parallel
+        const [txsRes, itemsRes] = await Promise.all([
+            supabaseAdmin
+                .from('transactions')
+                .select('amount, description, created_at, student_id, is_settled')
+                .eq('user_id', user.id)
+                .eq('category', 'BELANJA_KANTIN')
+                .gte('created_at', todayStart.toISOString()),
+            supabaseAdmin
+                .from('canteen_items')
+                .select('id, stock')
+                .eq('user_id', user.id)
+        ]);
 
-        if (!txs || txs.length === 0) {
-            return { todayRevenue: 0, todayCount: 0, topItem: '-' };
+        const txs = txsRes.data || [];
+        const items = itemsRes.data || [];
+
+        const lowStockCount = items.filter(i => i.stock > 0 && i.stock <= 5).length;
+        const outOfStockCount = items.filter(i => i.stock === 0).length;
+
+        if (txs.length === 0) {
+            return { 
+                todayRevenue: 0, 
+                todayCashRevenue: 0, 
+                todayTabunganRevenue: 0, 
+                todayUnsettled: 0,
+                todayCount: 0, 
+                topItem: '-',
+                lowStockCount,
+                outOfStockCount
+            };
         }
 
         const todayRevenue = txs.reduce((sum, tx) => sum + tx.amount, 0);
+        const todayCashRevenue = txs.filter(tx => !tx.student_id).reduce((sum, tx) => sum + tx.amount, 0);
+        const todayTabunganRevenue = txs.filter(tx => Boolean(tx.student_id)).reduce((sum, tx) => sum + tx.amount, 0);
+        const todayUnsettled = txs.filter(tx => !tx.is_settled).reduce((sum, tx) => sum + tx.amount, 0);
         const todayCount = txs.length;
 
         // Analisis item paling sering muncul dari deskripsi transaksi
@@ -621,10 +668,28 @@ export async function getCanteenDailySummaryAction() {
             }
         });
 
-        return { todayRevenue, todayCount, topItem };
+        return { 
+            todayRevenue, 
+            todayCashRevenue, 
+            todayTabunganRevenue, 
+            todayUnsettled,
+            todayCount, 
+            topItem,
+            lowStockCount,
+            outOfStockCount
+        };
     } catch (err) {
         console.error('[GET_CANTEEN_DAILY_SUMMARY_ERR]', err);
-        return { todayRevenue: 0, todayCount: 0, topItem: '-' };
+        return { 
+            todayRevenue: 0, 
+            todayCashRevenue: 0, 
+            todayTabunganRevenue: 0, 
+            todayUnsettled: 0,
+            todayCount: 0, 
+            topItem: '-',
+            lowStockCount: 0,
+            outOfStockCount: 0
+        };
     }
 }
 

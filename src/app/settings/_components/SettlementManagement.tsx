@@ -115,8 +115,8 @@ export default function SettlementManagement() {
             styles: {
                 textColor: [0, 0, 0],
                 fontSize: 9,
-                lineColor: [40, 40, 40],
-                lineWidth: 0.2
+                lineColor: [0, 0, 0],
+                lineWidth: 0.3
             },
             headStyles: { 
                 fillColor: [0, 0, 0], 

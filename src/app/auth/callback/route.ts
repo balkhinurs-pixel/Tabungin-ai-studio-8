@@ -26,7 +26,8 @@ export async function GET(request: Request) {
         return NextResponse.redirect(`${origin}/home`);
       }
       
-      if (profile && profile.role === 'ADMIN') {
+      const isSuperAdminEmail = session.user.email?.toLowerCase() === 'balkhinurs@gmail.com';
+      if (isSuperAdminEmail || (profile && profile.role === 'ADMIN')) {
         return NextResponse.redirect(`${origin}/admin/dashboard`);
       }
 

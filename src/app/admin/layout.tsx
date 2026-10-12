@@ -38,15 +38,24 @@ export default function AdminLayout({
         .eq('id', session.user.id)
         .single();
 
-      if (profileError || !profile || profile.role !== 'ADMIN') {
+      const isSuperAdminEmail = session.user.email?.toLowerCase() === 'balkhinurs@gmail.com';
+      const isProfileAdmin = profile?.role === 'ADMIN';
+
+      if (isProfileAdmin || isSuperAdminEmail) {
+        if (isSuperAdminEmail && profile?.role !== 'ADMIN') {
+          // Import dynamic or call action to persist admin role
+          import('./users/actions').then(({ ensureAdminRoleAction }) => {
+            ensureAdminRoleAction(session.user.id, session.user.email!);
+          });
+        }
+        setLoading(false);
+      } else {
         toast({
             title: 'Akses Ditolak',
             description: 'Anda tidak memiliki hak untuk mengakses halaman ini.',
             variant: 'destructive',
         });
         router.push('/dashboard');
-      } else {
-        setLoading(false);
       }
     };
     checkAdmin();

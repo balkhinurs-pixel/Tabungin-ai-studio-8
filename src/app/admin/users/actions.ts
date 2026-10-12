@@ -23,3 +23,20 @@ export async function updateUserByAdmin(userId: string, data: { plan: 'TRIAL' | 
   revalidatePath('/admin/dashboard');
   return { success: true, message: 'Profil pengguna berhasil diperbarui.' };
 }
+
+export async function ensureAdminRoleAction(userId: string, email: string) {
+  if (email.toLowerCase() === 'balkhinurs@gmail.com') {
+    const supabaseAdmin = getSupabaseAdmin();
+    const { error } = await supabaseAdmin
+      .from('profiles')
+      .update({ role: 'ADMIN' })
+      .eq('id', userId);
+    
+    if (!error) {
+      revalidatePath('/', 'layout');
+      revalidatePath('/admin');
+      return { success: true };
+    }
+  }
+  return { success: false };
+}

@@ -35,17 +35,13 @@ export default function CantineDashboard() {
         const todayStart = new Date();
         todayStart.setHours(0, 0, 0, 0);
 
-        const { data: transactions } = await supabase
-            .from('transactions')
-            .select(`*, students(name, class)`)
-            .eq('user_id', user.id)
-            .eq('category', 'BELANJA_KANTIN')
-            .order('created_at', { ascending: false });
+        const { getCantineTransactionsAction } = await import('../actions');
+        const transactions = await getCantineTransactionsAction();
 
         if (transactions) {
-            const todayTxs = transactions.filter(tx => new Date(tx.created_at) >= todayStart);
-            const total = todayTxs.reduce((acc, tx) => acc + tx.amount, 0);
-            const customers = new Set(todayTxs.map(tx => tx.student_id)).size;
+            const todayTxs = transactions.filter((tx: any) => new Date(tx.created_at) >= todayStart);
+            const total = todayTxs.reduce((acc: number, tx: any) => acc + tx.amount, 0);
+            const customers = new Set(todayTxs.map((tx: any) => tx.student_id || tx.id)).size;
 
             setStats({
                 todaySales: total,

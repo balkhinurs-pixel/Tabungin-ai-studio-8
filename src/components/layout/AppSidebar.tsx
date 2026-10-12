@@ -25,12 +25,26 @@ export default function AppSidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const supabase = createClient();
-  const [user, setUser] = useState<AuthUser | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     const fetchUser = async () => {
       const { data } = await supabase.auth.getUser();
       setUser(data.user);
+      if (data.user) {
+        if (data.user.email?.toLowerCase() === 'balkhinurs@gmail.com') {
+          setIsAdmin(true);
+        } else {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('role')
+            .eq('id', data.user.id)
+            .single();
+          if (profile?.role === 'ADMIN') {
+            setIsAdmin(true);
+          }
+        }
+      }
     };
     fetchUser();
   }, [supabase]);
@@ -56,6 +70,21 @@ export default function AppSidebar() {
       </SidebarHeader>
       <SidebarContent className="p-2">
         <SidebarMenu>
+          {isAdmin && (
+            <SidebarMenuItem>
+              <Link href="/admin/dashboard">
+                <SidebarMenuButton
+                  isActive={pathname.startsWith('/admin')}
+                  tooltip="Panel Admin Pusat"
+                  className="bg-primary/10 text-primary hover:bg-primary/20 font-bold border border-primary/20 mb-2"
+                >
+                  <ShieldCheck className="h-4 w-4 text-primary" />
+                  <span>Panel Admin Pusat</span>
+                </SidebarMenuButton>
+              </Link>
+            </SidebarMenuItem>
+          )}
+
           {NAV_ITEMS.map((item) => {
             if (item.isCentral) return null;
             return (

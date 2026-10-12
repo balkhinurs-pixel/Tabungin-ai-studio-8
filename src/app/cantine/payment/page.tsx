@@ -855,92 +855,118 @@ export default function CantinePOSPage() {
                       <p className="text-gray-400 font-bold text-[9px] uppercase tracking-widest">Transaksi & Stok Telah Terpotong</p>
                   </div>
 
-                  {/* Struk Thermal POS Card */}
-                  <Card id="thermal-receipt" className="bg-white border-2 border-dashed border-gray-200 rounded-2xl shadow-sm text-left">
-                      <CardContent className="p-4 space-y-3 font-mono text-xs">
-                          {/* Header Struk */}
-                          <div className="text-center border-b border-dashed border-gray-200 pb-2">
-                              <h3 className="font-black text-sm uppercase tracking-wider text-gray-900">STRUK BELANJA KANTIN</h3>
-                              <p className="text-[10px] text-gray-500 font-sans">Sistem Tabung.in POS</p>
-                              <p className="text-[9px] text-gray-400 mt-0.5">{format(new Date(), 'dd/MM/yyyy HH:mm:ss')}</p>
-                          </div>
+                  {/* Struk Thermal POS Card - Warna Hitam Pekat Khusus Thermal & Print Jelas */}
+                  <div className="print-area w-full">
+                    <Card id="thermal-receipt" className="bg-white border-2 border-dashed border-gray-900 rounded-2xl shadow-sm text-left text-black">
+                        <CardContent className="p-4 space-y-3 font-mono text-xs text-black">
+                            {/* Header Struk */}
+                            <div className="text-center border-b-2 border-dashed border-gray-900 pb-2">
+                                <h3 className="font-black text-sm uppercase tracking-wider text-black">STRUK BELANJA KANTIN</h3>
+                                <p className="text-[10px] text-black font-sans font-bold">Sistem Tabung.in POS</p>
+                                <p className="text-[9px] text-black mt-0.5 font-bold">{format(new Date(), 'dd/MM/yyyy HH:mm:ss')}</p>
+                            </div>
 
-                          {/* Info Pembeli & Metode */}
-                          <div className="space-y-1 text-[11px] border-b border-dashed border-gray-200 pb-2">
-                              <div className="flex justify-between">
-                                  <span className="text-gray-500">Metode:</span>
-                                  <span className="font-bold text-gray-900">{payMethod === 'TABUNGAN' ? 'TABUNGAN SISWA' : 'CASH / TUNAI'}</span>
-                              </div>
-                              <div className="flex justify-between">
-                                  <span className="text-gray-500">Pelanggan:</span>
-                                  <span className="font-bold text-gray-900">{payMethod === 'TABUNGAN' ? student?.name : (customerName || 'Pembeli Tunai')}</span>
-                              </div>
-                              {payMethod === 'TABUNGAN' && student?.nis && (
-                                  <div className="flex justify-between">
-                                      <span className="text-gray-500">NIS:</span>
-                                      <span className="font-bold text-gray-900">{student.nis}</span>
-                                  </div>
-                              )}
-                          </div>
-
-                          {/* Rincian Item Barang */}
-                          {cart.length > 0 ? (
-                            <div className="space-y-1.5 border-b border-dashed border-gray-200 pb-2">
-                              <div className="flex justify-between font-bold text-[10px] text-gray-400 uppercase">
-                                <span>Item</span>
-                                <span>Subtotal</span>
-                              </div>
-                              {cart.map(c => (
-                                <div key={c.id} className="flex justify-between text-[11px] font-bold">
-                                  <span>{c.name} ({c.qty}x)</span>
-                                  <span>Rp {(c.price * c.qty).toLocaleString('id-ID')}</span>
+                            {/* Info Pembeli & Metode */}
+                            <div className="space-y-1 text-[11px] border-b-2 border-dashed border-gray-900 pb-2 text-black">
+                                <div className="flex justify-between">
+                                    <span className="font-bold text-black">Metode:</span>
+                                    <span className="font-black text-black">{payMethod === 'TABUNGAN' ? 'TABUNGAN SISWA (ATM)' : 'CASH / TUNAI (LACI)'}</span>
                                 </div>
-                              ))}
+                                <div className="flex justify-between">
+                                    <span className="font-bold text-black">Pelanggan:</span>
+                                    <span className="font-black text-black">{payMethod === 'TABUNGAN' ? student?.name : (customerName || 'Pembeli Tunai')}</span>
+                                </div>
+                                {payMethod === 'TABUNGAN' && student?.nis && (
+                                    <div className="flex justify-between">
+                                        <span className="font-bold text-black">NIS:</span>
+                                        <span className="font-black text-black">{student.nis}</span>
+                                    </div>
+                                )}
                             </div>
-                          ) : (
-                            <div className="flex justify-between text-[11px] font-bold border-b border-dashed border-gray-200 pb-2">
-                              <span>Pembelian Kantin</span>
-                              <span>Rp {finalAmount.toLocaleString('id-ID')}</span>
-                            </div>
-                          )}
 
-                          {/* Total & Kembalian */}
-                          <div className="space-y-1 pt-1">
-                              <div className="flex justify-between text-sm font-black">
-                                  <span>TOTAL:</span>
-                                  <span className="text-emerald-600">Rp {finalAmount.toLocaleString('id-ID')}</span>
+                            {/* Rincian Item Barang */}
+                            {cart.length > 0 ? (
+                              <div className="space-y-1.5 border-b-2 border-dashed border-gray-900 pb-2 text-black">
+                                <div className="flex justify-between font-black text-[10px] text-black uppercase">
+                                  <span>Item</span>
+                                  <span>Subtotal</span>
+                                </div>
+                                {cart.map(c => (
+                                  <div key={c.id} className="flex justify-between text-[11px] font-bold text-black">
+                                    <span>{c.name} ({c.qty}x)</span>
+                                    <span className="font-mono">Rp {(c.price * c.qty).toLocaleString('id-ID')}</span>
+                                  </div>
+                                ))}
                               </div>
-                              {payMethod === 'TUNAI' && (
-                                <>
-                                  <div className="flex justify-between text-[11px] text-gray-600">
-                                      <span>Tunai Diterima:</span>
-                                      <span>Rp {parseInt(cashGiven || '0').toLocaleString('id-ID')}</span>
-                                  </div>
-                                  <div className="flex justify-between text-xs font-bold text-emerald-700">
-                                      <span>Kembalian:</span>
-                                      <span>Rp {cashChange.toLocaleString('id-ID')}</span>
-                                  </div>
-                                </>
-                              )}
-                          </div>
+                            ) : (
+                              <div className="flex justify-between text-[11px] font-bold border-b-2 border-dashed border-gray-900 pb-2 text-black">
+                                <span>Pembelian Kantin</span>
+                                <span className="font-mono">Rp {finalAmount.toLocaleString('id-ID')}</span>
+                              </div>
+                            )}
 
-                          <div className="text-center pt-2 text-[9px] text-gray-400 font-sans border-t border-dashed border-gray-200">
-                              Terima Kasih Atas Kunjungan Anda!
-                          </div>
-                      </CardContent>
-                  </Card>
+                            {/* Total & Kembalian - PURE BLACK BOLD SUPAYA SAAT PRINT JELAS */}
+                            <div className="space-y-1 pt-1 text-black">
+                                <div className="flex justify-between text-base font-black border-y-2 border-black py-1">
+                                    <span className="text-black">TOTAL:</span>
+                                    <span className="text-black font-mono">Rp {finalAmount.toLocaleString('id-ID')}</span>
+                                </div>
+                                {payMethod === 'TUNAI' && (
+                                  <>
+                                    <div className="flex justify-between text-xs font-bold text-black pt-1">
+                                        <span>Tunai Diterima:</span>
+                                        <span className="font-mono">Rp {parseInt(cashGiven || '0').toLocaleString('id-ID')}</span>
+                                    </div>
+                                    <div className="flex justify-between text-sm font-black text-black">
+                                        <span>Kembalian:</span>
+                                        <span className="font-mono">Rp {cashChange.toLocaleString('id-ID')}</span>
+                                    </div>
+                                  </>
+                                )}
+                            </div>
+
+                            <div className="text-center pt-2 text-[9px] text-black font-sans font-bold border-t-2 border-dashed border-gray-900">
+                                Terima Kasih Atas Kunjungan Anda!
+                            </div>
+                        </CardContent>
+                    </Card>
+                  </div>
+
+                  {/* Print Stylesheet */}
+                  <style jsx global>{`
+                    @media print {
+                      body * {
+                        visibility: hidden !important;
+                      }
+                      #thermal-receipt, #thermal-receipt * {
+                        visibility: visible !important;
+                      }
+                      #thermal-receipt {
+                        position: fixed !important;
+                        left: 0 !important;
+                        top: 0 !important;
+                        width: 100% !important;
+                        max-width: 80mm !important;
+                        margin: 0 auto !important;
+                        border: none !important;
+                        box-shadow: none !important;
+                        color: #000000 !important;
+                        font-weight: bold !important;
+                      }
+                    }
+                  `}</style>
 
                   {/* Action Buttons */}
                   <div className="space-y-2">
                       <Button 
                         onClick={handlePrintReceipt}
-                        className="w-full h-11 rounded-xl font-black bg-gray-900 hover:bg-gray-800 text-white shadow-md flex items-center justify-center gap-2 text-xs"
+                        className="w-full h-11 rounded-xl font-black bg-black hover:bg-gray-800 text-white shadow-md flex items-center justify-center gap-2 text-xs"
                       >
-                        <Printer className="h-4 w-4 text-emerald-400" /> CETAK STRUK THERMAL
+                        <Printer className="h-4 w-4 text-white" /> CETAK STRUK THERMAL (HITAM)
                       </Button>
 
                       <div className="flex gap-2">
-                          <Button variant="outline" className="flex-1 h-11 rounded-xl font-black text-gray-600 text-xs" onClick={handleReset}>
+                          <Button variant="outline" className="flex-1 h-11 rounded-xl font-black text-gray-900 text-xs" onClick={handleReset}>
                               TRANSAKSI BARU
                           </Button>
                           <Button className="flex-1 h-11 rounded-xl font-black shadow-md text-xs bg-primary" onClick={() => router.push('/cantine/outlet')}>

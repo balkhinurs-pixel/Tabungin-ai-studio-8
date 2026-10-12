@@ -22,13 +22,14 @@ export async function login(formData: FormData) {
   }
 
   if (signInData.user) {
+    const isSuperAdminEmail = signInData.user.email?.toLowerCase() === 'balkhinurs@gmail.com';
     const { data: profile } = await supabase
       .from('profiles')
       .select('role')
       .eq('id', signInData.user.id)
       .single();
     
-    if (profile && profile.role === 'ADMIN') {
+    if (isSuperAdminEmail || (profile && profile.role === 'ADMIN')) {
         revalidatePath('/', 'layout');
         return redirect('/admin/dashboard');
     }
