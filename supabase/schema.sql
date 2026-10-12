@@ -40,7 +40,7 @@ CREATE TABLE if not exists public.transactions (
   type text NOT NULL CHECK (type IN ('Pemasukan', 'Pengeluaran')),
   description text NOT NULL,
   amount numeric NOT NULL,
-  student_id uuid NOT NULL REFERENCES public.students(id) ON DELETE CASCADE,
+  student_id uuid REFERENCES public.students(id) ON DELETE CASCADE,
   user_id uuid REFERENCES public.profiles(id) ON DELETE SET NULL
 );
 

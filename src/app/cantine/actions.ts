@@ -43,9 +43,9 @@ export async function getCantineTransactionsAction(filters?: {
 
     // Filter Metode Pembayaran
     if (filters?.paymentMethod === 'CASH') {
-        query = query.is('student_id', null);
+        query = query.or('student_id.is.null,description.ilike.Tunai%,description.ilike.Penjualan Tunai%');
     } else if (filters?.paymentMethod === 'TABUNGAN') {
-        query = query.not('student_id', 'is', null);
+        query = query.not('student_id', 'is', null).not('description', 'ilike', 'Tunai%').not('description', 'ilike', 'Penjualan Tunai%');
     }
 
     // Filter Rentang Tanggal
@@ -63,12 +63,20 @@ export async function getCantineTransactionsAction(filters?: {
         return [];
     }
 
-    // Enrich with computed payment type
-    return (data || []).map((tx: any) => ({
-        ...tx,
-        is_cash: !tx.student_id,
-        payment_method: !tx.student_id ? 'CASH' : 'TABUNGAN'
-    }));
+    // Enrich with computed payment type (mengenali transaksi tunai baik via NULL student_id maupun akun sistem kas tunai)
+    return (data || []).map((tx: any) => {
+        const isCashTransaction = !tx.student_id || 
+            tx.students?.nis === 'CASH-UMUM' || 
+            tx.students?.nis === 'UMUM' || 
+            tx.students?.name?.toLowerCase().includes('pembeli umum') ||
+            (tx.description && (tx.description.startsWith('Tunai') || tx.description.startsWith('Penjualan Tunai')));
+
+        return {
+            ...tx,
+            is_cash: isCashTransaction,
+            payment_method: isCashTransaction ? 'CASH' : 'TABUNGAN'
+        };
+    });
 }
 
 /**
@@ -533,17 +541,102 @@ export async function processCashPaymentAction(params: {
             desc = `Tunai [${customerName || 'Pembeli'}]: ${itemSummary}`;
         }
 
-        // Simpan transaksi penjualan tunai
-        const { error: txError } = await supabaseAdmin.from('transactions').insert({
+        // Helper fallback internal: Jika database Supabase masih memberlakukan NOT NULL pada student_id
+        async function getOrCreateGeneralBuyerStudentId(merchantUserId: string): Promise<string | null> {
+            try {
+                // 1. Cek apakah sudah ada akun penampung kas tunai
+                const { data: existingStudent } = await supabaseAdmin
+                    .from('students')
+                    .select('id')
+                    .or('nis.eq.CASH-UMUM,nis.eq.UMUM')
+                    .limit(1)
+                    .maybeSingle();
+
+                if (existingStudent?.id) {
+                    return existingStudent.id;
+                }
+
+                // 2. Cek apakah ada record dengan nama Pembeli Umum
+                const { data: existingByName } = await supabaseAdmin
+                    .from('students')
+                    .select('id')
+                    .ilike('name', '%Pembeli Umum%')
+                    .limit(1)
+                    .maybeSingle();
+
+                if (existingByName?.id) {
+                    return existingByName.id;
+                }
+
+                // 3. Buat shadow user khusus penampung kas tunai
+                const dummyEmail = `cash_umum_${merchantUserId.slice(0, 8)}@kantin.system.supabase.user`;
+                const { data: authData } = await supabaseAdmin.auth.admin.createUser({
+                    email: dummyEmail,
+                    password: 'SystemCashUser2026!',
+                    email_confirm: true,
+                    user_metadata: { role: 'STUDENT', name: 'Pembeli Umum (Kas Kantin)' }
+                });
+
+                const targetAuthId = authData?.user?.id;
+                if (targetAuthId) {
+                    const { data: newStudent } = await supabaseAdmin
+                        .from('students')
+                        .insert({
+                            id: targetAuthId,
+                            nis: 'CASH-UMUM',
+                            name: 'Pembeli Umum (Kas Kantin)',
+                            class: 'Umum',
+                            user_id: merchantUserId
+                        })
+                        .select('id')
+                        .single();
+
+                    if (newStudent?.id) {
+                        return newStudent.id;
+                    }
+                }
+            } catch (fallbackErr) {
+                console.warn('[GENERAL_BUYER_FALLBACK_WARN]', fallbackErr);
+            }
+            return null;
+        }
+
+        // 1. Coba simpan transaksi penjualan tunai dengan student_id: null (rekomendasi standar)
+        const txPayload: any = {
             user_id: activeMerchant.id,
             amount: amount,
             type: 'Pengeluaran',
             category: 'BELANJA_KANTIN',
             description: desc,
             is_settled: true // Langsung lunas untuk tunai
-        });
+        };
 
-        if (txError) throw txError;
+        let { error: txError } = await supabaseAdmin.from('transactions').insert(txPayload);
+
+        // 2. Self-Healing Fallback: Jika skema database Supabase masih terkena not-null constraint pada student_id
+        if (txError && (
+            txError.code === '23502' || 
+            txError.message?.toLowerCase().includes('violates not-null constraint') ||
+            txError.message?.toLowerCase().includes('student_id')
+        )) {
+            console.log('[CASH_PAYMENT] student_id constraint detected, using general cash buyer fallback...');
+            const fallbackStudentId = await getOrCreateGeneralBuyerStudentId(activeMerchant.id);
+            if (fallbackStudentId) {
+                const retryRes = await supabaseAdmin.from('transactions').insert({
+                    ...txPayload,
+                    student_id: fallbackStudentId
+                });
+                txError = retryRes.error;
+            }
+        }
+
+        if (txError) {
+            console.error('[PROCESS_CASH_PAYMENT_ERROR]', txError);
+            return {
+                success: false,
+                message: 'Gagal memproses pembayaran tunai. Silakan coba kembali atau periksa koneksi.'
+            };
+        }
 
         // Potong stok item
         if (items && items.length > 0) {

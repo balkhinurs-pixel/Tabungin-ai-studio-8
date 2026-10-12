@@ -4,6 +4,12 @@ Salin dan jalankan seluruh blok kode di bawah ini sekaligus di **Supabase SQL Ed
 
 ```sql
 -- ==========================================================
+-- 0. DUKUNGAN TRANSAKSI TUNAI KANTIN (TANPA KARTU / SISWA)
+-- Mengizinkan transaksi kasir tunai tanpa mewajibkan student_id
+-- ==========================================================
+ALTER TABLE public.transactions ALTER COLUMN student_id DROP NOT NULL;
+
+-- ==========================================================
 -- 1. TAMBAHKAN KOLOM (WAJIB)
 -- ==========================================================
 ALTER TABLE public.transactions 

@@ -39,3 +39,6 @@ BEGIN
   RETURN NEW;
 END;
 $$;
+
+-- 6. Dukungan transaksi kasir tunai tanpa data siswa/kartu
+ALTER TABLE public.transactions ALTER COLUMN student_id DROP NOT NULL;

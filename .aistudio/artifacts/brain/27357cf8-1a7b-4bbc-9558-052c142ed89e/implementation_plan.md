@@ -1,105 +1,75 @@
-# Alur Transaksi Tunai Tanpa Scan Kartu di Kantin
+# Solusi Profesional Transaksi Tunai Kasir Kantin
 
-Menyediakan opsi pembayaran tunai (cash) langsung di POS Kasir Kantin tanpa kewajiban scan kartu santri/kartu tabungan, dengan opsi identitas pembeli fleksibel (Pembeli Umum, Tamu, Guru, atau nama manual), pemotongan stok otomatis, dan pemisahan pembukuan kas fisik vs saldo digital.
+Rencana penyempurnaan transaksi kasir kantin untuk pembayaran tunai tanpa ID santri dengan tampilan bersih, elegan, dan profesional tanpa mengekspos kode SQL ke antarmuka kasir.
 
-## User Review & Critical Decisions
+## User Decisions & Revisions
 
 > [!IMPORTANT]
-> Berdasarkan konfirmasi pertanyaan klarifikasi:
-> - **Identitas Pembeli**: Kasir dapat memilih label cepat (*Pembeli Umum*, *Tamu*, *Guru/Staf*) atau mengetik nama pembeli secara manual.
-> - **Manajemen Stok & Kas**: Transaksi tunai tetap otomatis memotong stok barang di inventaris kantin dan langsung masuk ke pembukuan uang fisik (kas laci outlet).
-
-- **Confirmed Decision 1**: Transaksi cash tanpa scan kartu sepenuhnya didukung dan tidak membutuhkan data siswa/PIN.
-- **Confirmed Decision 2**: Stok barang langsung berkurang secara *real-time* saat transaksi tunai selesai.
-- **Confirmed Decision 3**: Struk pembayaran dan laporan harian membedakan uang kas di laci kantin dan piutang/settlement dari tabungan digital siswa.
+> **Revisi Utama**:
+> - **Zero Technical Clutter di Layar Kasir**: Tidak menampilkan kode SQL, query database, atau istilah teknis pada layar kasir (POS) agar tampilan tetap profesional dan nyaman bagi petugas kasir.
+> - **Self-Healing / Fallback Cerdas di Backend**: Jika database Supabase belum sempat dijalankan `ALTER TABLE` (kolom `student_id` masih `NOT NULL`), sistem backend otomatis mengaitkan transaksi kasir ke entri sistem `Pembeli Umum Kantin` sehingga kasir tidak akan pernah mengalami transaksi gagal/macet.
+> - **Panduan SQL untuk Admin**: Perintah SQL pembaruan database tetap disediakan di dokumentasi teknis (`SUPABASE_ADDITIONAL_SQL.md`, `supabase/schema.sql`) dan menu Pengaturan Admin khusus.
 
 ---
 
-## 1. Overview & Core Concept
+## 1. Arsitektur & Penanganan Cerdas di Backend
 
-- **Apa Fungsinya**: Memungkinkan kasir melayani transaksi langsung dari pembeli yang tidak membawa atau tidak memiliki kartu RFID/QR (misalnya tamu luar, wali santri, guru, atau santri yang membawa uang tunai fisik).
-- **Target Pengguna**: Kasir & Pengelola Kantin Sekolah / Pesantren.
-- **Nilai Utama**: Fleksibilitas tinggi bagi kasir tanpa hambatan kartu, stok barang tetap sinkron dan akurat, serta uang fisik di laci kasir tercatat terpisah dan rapi saat tutup buku/shift.
-
----
-
-## 2. User Experience & Visual Design
-
-### Alur Transaksi Kasir
-1. **Pilih Menu & Keranjang**: Kasir memilih makanan/minuman dari katalog (stok terpantau langsung).
-2. **Pilih Metode Pembayaran**:
-   - `Tabungan Siswa`: Membutuhkan Scan Kartu / Barcode / NIS + PIN.
-   - `Tunai (Cash)`: Langsung ke layar hitung uang tunai tanpa perlu kartu.
-3. **Pilihan Identitas Pembeli**:
-   - Pilihan chip cepat: `Pembeli Umum`, `Tamu`, `Guru / Staf`, `Siswa Tunai`.
-   - Input teks opsional untuk nama pembeli tertentu.
-4. **Hitung Uang & Kembalian**:
-   - Tombol nominal cepat: *Uang Pas*, *Rp 10.000*, *Rp 20.000*, *Rp 50.000*, *Rp 100.000*.
-   - Kalkulasi kembalian otomatis dengan teks kontras tinggi (hijau/hitam pekat).
-5. **Konfirmasi & Cetak Struk**:
-   - Struk thermal kasir mencantumkan: `METODE: TUNAI (CASH)`, `PEMBELI: UMUM / [NAMA]`, total belanja, uang diterima, dan uang kembalian.
-   - Warna hitam pekat untuk cetak thermal yang tajam dan jelas.
-
-### Estetika & Tampilan (SaaS POS Dashboard)
-- **Palette**: Kanvas bersih, aksen emerald profesional untuk kasir (`emerald-600`), kartu ringkasan dengan pembatas halus (*hairline border*).
-- **Tipografi**: Menggunakan `tabular-nums` untuk semua angka rupiah dan jumlah stok agar angka tidak bergeser saat input.
-- **Status Transaksi**: Badge pembeda yang jelas di riwayat antara transaksi `TUNAI` (uang fisik di laci kasir) dan `TABUNGAN` (saldo digital).
+### A. Dual-Strategy di Server Action (`src/app/cantine/actions.ts`)
+Saat kasir memproses `processCashPaymentAction` dengan pembeli umum (tanpa scan kartu):
+1. **Langkah 1 (Primary)**: Sistem mencoba menyimpan transaksi dengan `student_id: null`.
+2. **Langkah 2 (Automatic Fallback / Self-Healing)**:
+   - Jika Supabase mengembalikan error `violates not-null constraint` pada `student_id`:
+   - Backend secara otomatis mendeteksi dan mencari/membuat entri akun virtual:
+     - Nama: `Pembeli Umum (Kas Kantin)`
+     - NIS: `CASH-UMUM`
+     - Kelas: `Umum / Kasir`
+   - Menyimpan transaksi menggunakan ID akun virtual tersebut dengan catatan nama pembeli asli (misal: "Tamu", "Guru", atau nama pembeli manual).
+3. **Hasil**: Transaksi kasir **langsung sukses seketika**, stok barang terpotong tepat, struk tercetak rapi, dan kasir tidak terganggu oleh error database.
 
 ---
 
-## 3. Key Product Decisions & Trade-Offs
+## 2. Tampilan Kasir Profesional (Zero-SQL UI)
 
-- **Pemisahan Jalur Transaksi**:
-  - *Pendekatan*: Transaksi tunai mencatat `user_id` merchant, `is_settled: true`, dan `student_id: null`.
-  - *Alasan*: Menghindari ketergantungan pada akun siswa atau batasan harian uang saku santri saat pembeli adalah umum/guru.
-- **Pelacakan Stok Terpadu**:
-  - *Pendekatan*: Mengurangi tabel inventaris `canteen_items` yang sama untuk kedua metode pembayaran.
-  - *Alasan*: Mencegah selisih stok fisik antara barang yang dibeli dengan tabungan vs uang tunai.
-- **Audit & Penutupan Kas Harian (Shift Closing)**:
-  - *Pendekatan*: Laporan rekap harian membagi omzet menjadi:
-    1. Kas Fisik (harus cocok dengan isi laci kasir).
-    2. Piutang Non-Tunai (yang akan dicairkan/disettle oleh bendahara sekolah).
+### A. Layar Kasir POS (`src/app/cantine/payment/page.tsx`)
+- **Tampilan Bersih**: Menjaga estetika antarmuka POS tetap modern, minimalis, dan berstandar SaaS kasir ritel.
+- **Notifikasi Ramah Operasional**:
+  - Jika terjadi kendala jaringan atau kegagalan lainnya, hanya menampilkan pesan operasional ramah seperti:
+    *"Gagal memproses transaksi. Silakan periksa koneksi internet atau ulangi kembali."*
+  - Tidak ada popup query SQL atau error database mentah di layar kasir.
+
+### B. Struk Pembayaran & Riwayat Transaksi
+- Struk kasir tetap mencantumkan identitas yang jelas:
+  - `METODE: TUNAI (CASH)`
+  - `PEMBELI: Pembeli Umum` (atau nama kustom yang dimasukkan kasir)
+  - `KASIR: Petugas Kantin`
+  - Total belanja, nominal uang tunai, dan kembalian.
+- Di halaman riwayat (`/cantine/history/page.tsx`), transaksi tunai tampil dengan lencana badge `TUNAI` yang membedakan uang fisik di laci dengan transaksi tabungan santri.
 
 ---
 
-## 4. Technical Architecture & Data Strategy
+## 3. Pembaruan Skema & Dokumentasi Database
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                   POS KASIR KANTIN (UI)                     │
-│  [Katalog Barang]  ──>  [Keranjang Belanja]                 │
-│                                │                            │
-│                   Pilih Metode Pembayaran                   │
-│                                │                            │
-│           ┌────────────────────┴────────────────────┐       │
-│           ▼                                         ▼       │
-│    [Tabungan Siswa]                          [Tunai / Cash] │
-│    - Scan Kartu                              - Tanpa Kartu  │
-│    - Verifikasi PIN                          - Opsi Pembeli │
-│    - Cek Limit Harian                        - Hitung Kas   │
-│           │                                         │       │
-└───────────┼─────────────────────────────────────────┼───────┘
-            │                                         │
-            ▼                                         ▼
- ┌──────────────────────┐                  ┌──────────────────────┐
- │processCantinePayment │                  │processCashPayment    │
- └──────────┬───────────┘                  └──────────┬───────────┘
-            │                                         │
-            ▼                                         ▼
- ┌────────────────────────────────────────────────────────────┐
- │                  SUPABASE DATABASE                         │
- │ - canteen_items: Stok terpotong otomatis (newStock)        │
- │ - transactions: Record tercatat (Tunai vs Tabungan)        │
- │ - Rekap harian kantin: Total Kas Fisik vs Klaim Non-Tunai  │
- └────────────────────────────────────────────────────────────┘
-```
+Bagi administrator/developer yang ingin menjalankan migrasi agar `student_id` benar-benar nullable:
+- **Perintah SQL**:
+  ```sql
+  -- Mengubah kolom student_id pada tabel transactions menjadi opsional (NULL)
+  ALTER TABLE public.transactions ALTER COLUMN student_id DROP NOT NULL;
+  ```
+- **File yang diperbarui**:
+  - `SUPABASE_ADDITIONAL_SQL.md`
+  - `supabase/schema.sql`
+  - `docs/update_cantine.sql`
 
-### Komponen & Modifikasi Teknis
-1. **Halaman POS Kasir (`/cantine/payment/page.tsx`)**:
-   - Memastikan tombol identitas cepat (*Pembeli Umum*, *Tamu*, *Guru*, dll.) tersedia dengan UX 1-klik di layar Tunai.
-   - Memastikan tombol nominal uang cepat bekerja instan dan responsif.
-   - Struk thermal cetak hitam solid (`textColor: [0, 0, 0]`) yang memuat rincian tunai.
-2. **Action Server (`/cantine/actions.ts`)**:
-   - Memvalidasi dan mengeksekusi `processCashPaymentAction` dengan pengurangan stok aman dan pencatatan transaksi kasir.
-3. **Laporan & Rekap (`/cantine/history/page.tsx`)**:
-   - Menyajikan pembagian total omzet: *Kas Fisik Masuk Laci* vs *Non-Tunai Masuk Rekening Tabungan*.
+---
+
+## 4. Rencana Langkah Kerja (Implementation Steps)
+
+1. **Pembaruan `src/app/cantine/actions.ts`**:
+   - Implementasikan fungsi fallback otomatis `getOrCreateGeneralBuyerStudentId()`.
+   - Modifikasi `processCashPaymentAction`: Coba simpan dengan `student_id: null`. Jika ditolak oleh not-null constraint, otomatis fallback ke akun virtual pembeli umum.
+2. **Pembersihan Pesan Error di `src/app/cantine/payment/page.tsx`**:
+   - Pastikan toast / alert hanya menampilkan pesan berbahasa Indonesia yang sopan dan profesional untuk kasir.
+3. **Pembaruan Berkas Skema Database**:
+   - Perbarui `supabase/schema.sql` dan `SUPABASE_ADDITIONAL_SQL.md`.
+4. **Pengujian & Kompilasi**:
+   - Jalankan `compile_applet` untuk memastikan seluruh tipe data, komponen, dan endpoint lulus validasi.

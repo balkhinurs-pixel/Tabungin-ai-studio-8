@@ -270,20 +270,31 @@ export default function CantinePOSPage() {
       return;
     }
 
+    setPayMethod('TUNAI');
     setState('PROCESSING');
     const result = await processCashPaymentAction({
       amount: finalAmount,
       cashGiven: cashVal,
-      customerName: customerName || 'Pembeli Tunai',
+      customerName: customerName || 'Pembeli Umum',
       items: posMode === 'CATALOG' ? cart.map(c => ({ id: c.id, name: c.name, qty: c.qty, price: c.price })) : undefined
     });
 
     if (result.success) {
-      setPayMethod('TUNAI');
       setCashChange(result.change || 0);
       setState('SUCCESS');
     } else {
-      setErrorMessage(result.message);
+      // Pastikan pesan error untuk kasir selalu rapi, sopan, dan bebas istilah database/SQL teknis
+      const isTechnical = result.message && (
+        result.message.includes('constraint') || 
+        result.message.includes('relation') || 
+        result.message.includes('violates') || 
+        result.message.includes('column') ||
+        result.message.includes('null value')
+      );
+      const cleanMsg = isTechnical 
+        ? 'Gagal memproses pembayaran tunai. Silakan coba kembali atau periksa koneksi.' 
+        : (result.message || 'Gagal memproses transaksi tunai.');
+      setErrorMessage(cleanMsg);
       setState('ERROR');
     }
   };
@@ -1105,14 +1116,29 @@ export default function CantinePOSPage() {
                       <XCircle className="h-8 w-8 text-rose-600" />
                   </div>
                   <div className="space-y-1">
-                      <h2 className="text-xl font-black text-gray-900 tracking-tight uppercase">GAGAL</h2>
-                      <p className="text-rose-600 text-[10px] font-bold px-4 leading-relaxed">{errorMessage}</p>
+                      <h2 className="text-xl font-black text-gray-900 tracking-tight uppercase">TRANSAKSI GAGAL</h2>
+                      <p className="text-rose-600 text-xs font-bold px-4 leading-relaxed">{errorMessage}</p>
                   </div>
                   <div className="grid grid-cols-1 gap-2 pt-2">
-                      <Button size="lg" className="w-full rounded-xl h-14 font-black shadow-lg" variant="destructive" onClick={() => setState('PIN_INPUT')}>
-                          ULANGI PIN
-                      </Button>
-                      <Button variant="ghost" className="h-10 font-bold text-gray-400 text-[10px]" onClick={handleReset}>
+                      {payMethod === 'TUNAI' ? (
+                        <Button 
+                          size="lg" 
+                          className="w-full rounded-xl h-14 font-black shadow-lg bg-emerald-600 hover:bg-emerald-700 text-white tracking-wider" 
+                          onClick={() => setState('CASH_INPUT')}
+                        >
+                            COBA LAGI PEMBAYARAN TUNAI
+                        </Button>
+                      ) : (
+                        <Button 
+                          size="lg" 
+                          className="w-full rounded-xl h-14 font-black shadow-lg" 
+                          variant="destructive" 
+                          onClick={() => setState('PIN_INPUT')}
+                        >
+                            ULANGI PIN
+                        </Button>
+                      )}
+                      <Button variant="ghost" className="h-10 font-bold text-gray-400 text-xs" onClick={handleReset}>
                           Batalkan Transaksi
                       </Button>
                   </div>
