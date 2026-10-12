@@ -25,7 +25,9 @@ import {
   Keyboard,
   Printer,
   Coins,
-  Wallet
+  Wallet,
+  UserCheck,
+  BadgeCheck
 } from 'lucide-react';
 import jsQR from 'jsqr';
 import { useToast } from '@/hooks/use-toast';
@@ -71,7 +73,7 @@ export default function CantinePOSPage() {
   const [payMethod, setPayMethod] = useState<'TABUNGAN' | 'TUNAI'>('TABUNGAN');
   const [cashGiven, setCashGiven] = useState('');
   const [cashChange, setCashChange] = useState(0);
-  const [customerName, setCustomerName] = useState('');
+  const [customerName, setCustomerName] = useState('Pembeli Umum');
 
   // Payment State
   const [student, setStudent] = useState<any>(null);
@@ -127,7 +129,7 @@ export default function CantinePOSPage() {
     setManualScanInput('');
     setCashGiven('');
     setCashChange(0);
-    setCustomerName('');
+    setCustomerName('Pembeli Umum');
     loadData();
   };
 
@@ -541,13 +543,31 @@ export default function CantinePOSPage() {
                     <span className="text-xs font-bold text-white/60">{cart.reduce((a, c) => a + c.qty, 0)} Items</span>
                   </div>
 
-                  <Button 
-                    disabled={cart.length === 0}
-                    onClick={() => setState('METHOD_SELECT')}
-                    className="w-full bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black h-12 rounded-xl shadow-lg flex items-center justify-center gap-2 text-xs uppercase tracking-wider"
-                  >
-                    <ScanLine className="h-4 w-4" /> Lanjut ke Pembayaran
-                  </Button>
+                  {/* Dual Action POS Checkout Buttons */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button 
+                      disabled={cart.length === 0}
+                      onClick={() => {
+                        setPayMethod('TUNAI');
+                        setCashGiven(cartTotal.toString());
+                        setCustomerName('Pembeli Umum');
+                        setState('CASH_INPUT');
+                      }}
+                      className="w-full bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black h-12 rounded-xl shadow-lg flex items-center justify-center gap-1.5 text-xs uppercase tracking-wider"
+                    >
+                      <Banknote className="h-4 w-4" /> Bayar Tunai
+                    </Button>
+                    <Button 
+                      disabled={cart.length === 0}
+                      onClick={() => {
+                        setPayMethod('TABUNGAN');
+                        setState('SCANNING');
+                      }}
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black h-12 rounded-xl shadow-lg flex items-center justify-center gap-1.5 text-xs uppercase tracking-wider"
+                    >
+                      <ScanLine className="h-4 w-4" /> Scan Kartu
+                    </Button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -592,6 +612,7 @@ export default function CantinePOSPage() {
                   onClick={() => {
                     setPayMethod('TUNAI');
                     setCashGiven(finalAmount.toString());
+                    setCustomerName('Pembeli Umum');
                     setState('CASH_INPUT');
                   }}
                   className="p-4 rounded-3xl border-2 border-emerald-200 bg-emerald-50/50 hover:bg-emerald-100/50 transition-all text-left flex items-center justify-between group shadow-sm"
@@ -602,7 +623,7 @@ export default function CantinePOSPage() {
                     </div>
                     <div>
                       <h3 className="font-black text-sm text-gray-900">Pembayaran Tunai (Cash)</h3>
-                      <p className="text-[11px] text-gray-500 font-medium">Terima tunai & kalkulasi kembalian</p>
+                      <p className="text-[11px] text-gray-500 font-medium">Tanpa scan kartu • Terima tunai & hitung kembalian</p>
                     </div>
                   </div>
                   <ArrowRight className="h-5 w-5 text-emerald-600 group-hover:translate-x-1 transition-transform" />
@@ -621,15 +642,16 @@ export default function CantinePOSPage() {
               <Card className="w-full border-2 border-emerald-200 bg-white rounded-3xl shadow-md p-5 space-y-4">
                 <div className="text-center space-y-1">
                   <div className="inline-flex items-center gap-1.5 bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full text-[10px] font-black uppercase">
-                    <Banknote className="h-3.5 w-3.5" /> Pembayaran Tunai
+                    <Banknote className="h-3.5 w-3.5" /> Pembayaran Tunai (Tanpa Kartu)
                   </div>
                   <h3 className="text-lg font-black text-gray-900">Hitung Uang & Kembalian</h3>
+                  <p className="text-[10px] text-emerald-600 font-bold">Stok otomatis terpotong & uang masuk laci kasir</p>
                 </div>
 
-                {/* Ringkasan Nominal */}
+                {/* Ringkasan Nominal & Kalkulasi */}
                 <div className="bg-gray-50 p-4 rounded-2xl space-y-2 border border-gray-100">
                   <div className="flex justify-between items-center text-xs font-bold">
-                    <span className="text-gray-400">Total Tagihan:</span>
+                    <span className="text-gray-400">Total Tagihan Belanja:</span>
                     <span className="text-gray-900 font-black text-sm">Rp {finalAmount.toLocaleString('id-ID')}</span>
                   </div>
 
@@ -639,33 +661,63 @@ export default function CantinePOSPage() {
                       type="number"
                       value={cashGiven}
                       onChange={(e) => setCashGiven(e.target.value)}
-                      placeholder="Masukkan nominal uang..."
+                      placeholder="Ketik nominal uang diterima..."
                       className="h-12 text-lg font-black rounded-xl border-emerald-200 text-emerald-700 bg-white"
                       autoFocus
                     />
                   </div>
 
                   {/* Tombol Cepat Nominal Uang */}
-                  <div className="flex flex-wrap gap-1.5 pt-1">
-                    <button 
-                      type="button" 
-                      onClick={() => setCashGiven(finalAmount.toString())}
-                      className="px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 text-[10px] font-black hover:bg-emerald-200"
-                    >
-                      Uang Pas (Rp {finalAmount.toLocaleString('id-ID')})
-                    </button>
-                    {[10000, 20000, 50000, 100000].map(val => (
-                      val >= finalAmount && (
-                        <button 
-                          key={val}
-                          type="button" 
-                          onClick={() => setCashGiven(val.toString())}
-                          className="px-2.5 py-1 rounded-lg bg-gray-200 text-gray-700 text-[10px] font-black hover:bg-gray-300"
+                  <div className="space-y-1.5 pt-1">
+                    <div className="flex flex-wrap gap-1.5">
+                      <button 
+                        type="button" 
+                        onClick={() => setCashGiven(finalAmount.toString())}
+                        className={cn(
+                          "px-2.5 py-1 rounded-lg text-[10px] font-black transition-all",
+                          cashGiven === finalAmount.toString() 
+                            ? "bg-emerald-600 text-white shadow" 
+                            : "bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
+                        )}
+                      >
+                        Uang Pas (Rp {finalAmount.toLocaleString('id-ID')})
+                      </button>
+                      {[5000, 10000, 20000, 50000, 100000].map(val => (
+                        val >= finalAmount && (
+                          <button 
+                            key={val}
+                            type="button" 
+                            onClick={() => setCashGiven(val.toString())}
+                            className={cn(
+                              "px-2.5 py-1 rounded-lg text-[10px] font-black transition-all",
+                              cashGiven === val.toString() 
+                                ? "bg-emerald-600 text-white shadow" 
+                                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                            )}
+                          >
+                            Rp {val.toLocaleString('id-ID')}
+                          </button>
+                        )
+                      ))}
+                    </div>
+
+                    {/* Quick Adder Buttons (+2rb, +5rb, +10rb, +20rb, +50rb) */}
+                    <div className="flex items-center gap-1 pt-1 border-t border-dashed border-gray-200">
+                      <span className="text-[9px] font-bold text-gray-400 shrink-0">Tambah:</span>
+                      {[2000, 5000, 10000, 20000, 50000].map(addVal => (
+                        <button
+                          key={addVal}
+                          type="button"
+                          onClick={() => {
+                            const current = parseInt(cashGiven || '0');
+                            setCashGiven((current + addVal).toString());
+                          }}
+                          className="px-2 py-0.5 rounded-md bg-white border border-gray-200 text-gray-700 text-[10px] font-bold hover:bg-gray-100 active:scale-95 transition-transform"
                         >
-                          Rp {val.toLocaleString('id-ID')}
+                          +{addVal >= 1000 ? `${addVal / 1000}k` : addVal}
                         </button>
-                      )
-                    ))}
+                      ))}
+                    </div>
                   </div>
 
                   {/* Live Kalkulasi Kembalian */}
@@ -675,19 +727,61 @@ export default function CantinePOSPage() {
                       "text-xl font-black",
                       (parseInt(cashGiven || '0') - finalAmount) >= 0 ? "text-emerald-600" : "text-rose-500"
                     )}>
-                      Rp {Math.max(0, parseInt(cashGiven || '0') - finalAmount).toLocaleString('id-ID')}
+                      {(parseInt(cashGiven || '0') - finalAmount) === 0 ? (
+                        <span className="text-emerald-600 text-sm font-black bg-emerald-100 px-2.5 py-1 rounded-lg">UANG PAS (Rp 0)</span>
+                      ) : (parseInt(cashGiven || '0') - finalAmount) > 0 ? (
+                        `Rp ${(parseInt(cashGiven || '0') - finalAmount).toLocaleString('id-ID')}`
+                      ) : (
+                        <span className="text-rose-500 text-xs font-black">
+                          Kurang Rp {Math.abs(parseInt(cashGiven || '0') - finalAmount).toLocaleString('id-ID')}
+                        </span>
+                      )}
                     </span>
                   </div>
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-gray-400">Catatan Nama Pembeli (Opsional)</label>
+                {/* Identitas Pembeli (Bisa pilih preset atau ketik nama manual) */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-black text-gray-600 uppercase tracking-wider flex items-center gap-1">
+                      <UserCheck className="h-3.5 w-3.5 text-emerald-600" /> Identitas Pembeli
+                    </label>
+                    <span className="text-[9px] text-gray-400 font-bold">Pilih cepat atau ketik manual</span>
+                  </div>
+
+                  {/* Preset Chips */}
+                  <div className="flex flex-wrap gap-1.5">
+                    {['Pembeli Umum', 'Tamu / Wali Santri', 'Guru / Staf', 'Siswa (Tunai)'].map(chip => (
+                      <button
+                        key={chip}
+                        type="button"
+                        onClick={() => setCustomerName(chip)}
+                        className={cn(
+                          "px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all border",
+                          customerName === chip 
+                            ? "bg-emerald-600 text-white border-emerald-600 shadow-sm" 
+                            : "bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200"
+                        )}
+                      >
+                        {chip}
+                      </button>
+                    ))}
+                  </div>
+
                   <Input 
                     value={customerName}
                     onChange={(e) => setCustomerName(e.target.value)}
-                    placeholder="Contoh: Bpk Guru / Siswa Tunai"
-                    className="h-9 rounded-xl text-xs font-bold"
+                    placeholder="Atau ketik nama pembeli manual (misal: Pak Joko, Alumni, dll)..."
+                    className="h-10 rounded-xl text-xs font-bold border-gray-200 focus-visible:ring-emerald-500"
                   />
+                </div>
+
+                {/* Banner Status Pemotongan Stok */}
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-2.5 flex items-start gap-2">
+                  <BadgeCheck className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+                  <p className="text-[10px] text-emerald-900 leading-relaxed font-medium">
+                    Transaksi tunai ini <strong>otomatis memotong stok barang</strong> di sistem dan dicatat ke <strong>uang kas fisik (laci kasir)</strong>.
+                  </p>
                 </div>
 
                 <Button 
@@ -699,15 +793,15 @@ export default function CantinePOSPage() {
                 </Button>
               </Card>
 
-              <Button variant="ghost" className="text-rose-500 font-bold text-xs" onClick={() => setState('METHOD_SELECT')}>
-                Batal & Pilih Metode Lain
+              <Button variant="ghost" className="text-gray-400 font-bold text-xs" onClick={() => setState('POS_CATALOG')}>
+                Batal & Kembali ke Keranjang
               </Button>
             </div>
           )}
 
           {/* STEP 1 (MANUAL): INPUT NOMINAL MANUAL */}
           {state === 'POS_CATALOG' && posMode === 'MANUAL' && (
-              <Keypad label="Masukan Nominal Belanja" value={amount} onChange={setAmount} onConfirm={() => setState('SCANNING')} />
+              <Keypad label="Masukan Nominal Belanja" value={amount} onChange={setAmount} onConfirm={() => setState('METHOD_SELECT')} />
           )}
 
           {/* STEP 2: SCANNING */}
@@ -810,6 +904,31 @@ export default function CantinePOSPage() {
                           </div>
                       </div>
                   )}
+
+                  {/* Tombol Cepat Beralih ke Bayar Tunai (Tanpa Scan Kartu) */}
+                  <div className="w-full pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPayMethod('TUNAI');
+                        setCashGiven(finalAmount.toString());
+                        setCustomerName('Pembeli Umum');
+                        setState('CASH_INPUT');
+                      }}
+                      className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-emerald-50 hover:bg-emerald-100 border-2 border-emerald-300 transition-all text-emerald-950 group shadow-sm text-left"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="h-9 w-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow">
+                          <Banknote className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-black">Tidak Bawa Kartu? Bayar Tunai (Cash)</p>
+                          <p className="text-[10px] text-emerald-700 font-medium">Masuk kas tunai & stok barang otomatis terpotong</p>
+                        </div>
+                      </div>
+                      <ArrowRight className="h-4 w-4 text-emerald-700 group-hover:translate-x-1 transition-transform shrink-0" />
+                    </button>
+                  </div>
 
                   <Button variant="ghost" className="text-rose-500 font-bold text-xs h-8" onClick={handleReset}>
                       Batalkan Transaksi
@@ -925,8 +1044,10 @@ export default function CantinePOSPage() {
                                 )}
                             </div>
 
-                            <div className="text-center pt-2 text-[9px] text-black font-sans font-bold border-t-2 border-dashed border-gray-900">
-                                Terima Kasih Atas Kunjungan Anda!
+                            <div className="text-center pt-2 text-[9px] text-black font-sans font-bold border-t-2 border-dashed border-gray-900 space-y-0.5">
+                                <p>{payMethod === 'TUNAI' ? '✓ Pembayaran Tunai (Lunas di Laci Kasir)' : '✓ Dipotong Dari Tabungan Siswa'}</p>
+                                <p className="text-[8px] text-black font-normal">Stok Barang Otomatis Terpotong</p>
+                                <p className="pt-1">Terima Kasih Atas Kunjungan Anda!</p>
                             </div>
                         </CardContent>
                     </Card>

@@ -1,0 +1,6 @@
+{
+  "summary": "Rencana implementasi alur pembayaran tunai (cash) tanpa scan kartu di POS kantin: pemilihan pembeli umum/manual, pemotongan stok otomatis, pencatatan laci kasir tunai, struk thermal, dan rekap laporan terpisah antara kas fisik dan non-tunai.",
+  "updatedAt": "2026-10-12T22:17:56.906805221Z",
+  "requestFeedback": true,
+  "userFacing": true
+}

@@ -117,7 +117,7 @@ export default function CantineHistoryPage() {
             head: [['NO', 'TANGGAL', 'PELANGGAN / SISWA', 'METODE', 'DETAIL BARANG', 'STATUS', 'NOMINAL (RP)']],
             body: transactions.map((tx, idx) => {
                 const customer = tx.is_cash 
-                    ? (tx.description?.split(':')[0]?.replace('Tunai [', '').replace(']', '') || 'Pembeli Tunai')
+                    ? (tx.description?.split(':')[0]?.replace('Tunai [', '').replace(']', '').replace('Penjualan Tunai', '').trim() || 'Pembeli Umum')
                     : `${tx.students?.name || 'Siswa'} (${tx.students?.class || '-'})`;
                 
                 const method = tx.is_cash ? 'CASH / TUNAI' : 'TABUNGAN (ATM)';
@@ -397,7 +397,7 @@ export default function CantineHistoryPage() {
                 {filteredTransactions.map((tx) => {
                     const isCash = tx.is_cash;
                     const customerName = isCash
-                        ? (tx.description?.split(':')[0]?.replace('Tunai [', '').replace(']', '') || 'Pembeli Tunai')
+                        ? (tx.description?.split(':')[0]?.replace('Tunai [', '').replace(']', '').replace('Penjualan Tunai', '').replace(':', '').trim() || 'Pembeli Umum')
                         : (tx.students?.name || 'Siswa');
                     const itemsText = tx.description?.includes(':') ? tx.description.split(':')[1]?.trim() : '';
 
