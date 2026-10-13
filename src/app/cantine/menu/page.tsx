@@ -18,7 +18,9 @@ import {
   Minus,
   Sparkles,
   DollarSign,
-  Boxes
+  Boxes,
+  TrendingUp,
+  Percent
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -49,10 +51,11 @@ export default function CantineMenuPage() {
   const [editingItem, setEditingItem] = useState<any>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // Form State
+  // Form State (dengan Harga Modal & Harga Jual)
   const [formName, setFormName] = useState('');
   const [formCategory, setFormCategory] = useState('Makanan');
-  const [formPrice, setFormPrice] = useState('');
+  const [formCostPrice, setFormCostPrice] = useState(''); // Harga Modal / Asli
+  const [formPrice, setFormPrice] = useState('');         // Harga Jual
   const [formStock, setFormStock] = useState('');
 
   const { toast } = useToast();
@@ -71,6 +74,7 @@ export default function CantineMenuPage() {
   const resetForm = () => {
     setFormName('');
     setFormCategory('Makanan');
+    setFormCostPrice('');
     setFormPrice('');
     setFormStock('');
     setEditingItem(null);
@@ -85,19 +89,21 @@ export default function CantineMenuPage() {
     setEditingItem(item);
     setFormName(item.name);
     setFormCategory(item.category || 'Makanan');
-    setFormPrice(item.price.toString());
-    setFormStock(item.stock.toString());
+    setFormCostPrice(item.cost_price ? item.cost_price.toString() : '0');
+    setFormPrice(item.price ? item.price.toString() : '');
+    setFormStock(item.stock ? item.stock.toString() : '0');
     setIsAddOpen(true);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formName.trim() || !formPrice) {
-      toast({ title: 'Nama dan Harga Wajib Diisi', variant: 'destructive' });
+      toast({ title: 'Nama dan Harga Jual Wajib Diisi', variant: 'destructive' });
       return;
     }
 
     setSubmitting(true);
+    const costNum = parseInt(formCostPrice) || 0;
     const priceNum = parseInt(formPrice) || 0;
     const stockNum = parseInt(formStock) || 0;
 
@@ -106,6 +112,7 @@ export default function CantineMenuPage() {
       res = await updateCanteenItemAction(editingItem.id, {
         name: formName,
         category: formCategory,
+        cost_price: costNum,
         price: priceNum,
         stock: stockNum
       });
@@ -113,6 +120,7 @@ export default function CantineMenuPage() {
       res = await addCanteenItemAction({
         name: formName,
         category: formCategory,
+        cost_price: costNum,
         price: priceNum,
         stock: stockNum
       });
@@ -165,10 +173,14 @@ export default function CantineMenuPage() {
     return matchSearch && matchCat;
   });
 
-  // Analytics Stats
+  // Analytics Stats (Harga Modal, Harga Jual, Potensi Laba)
   const totalItemsCount = items.length;
-  const lowStockCount = items.filter(i => i.stock <= 5).length;
+  const lowStockCount = items.filter(i => i.stock <= 5 && i.stock > 0).length;
+  const outOfStockCount = items.filter(i => i.stock === 0).length;
+  const totalStockCost = items.reduce((acc, curr) => acc + ((curr.cost_price || 0) * curr.stock), 0);
   const totalStockValue = items.reduce((acc, curr) => acc + (curr.price * curr.stock), 0);
+  const potentialStockProfit = Math.max(0, totalStockValue - totalStockCost);
+  const averageMargin = totalStockValue > 0 ? Math.round((potentialStockProfit / totalStockValue) * 100) : 0;
 
   const categories = ['ALL', 'Makanan', 'Minuman', 'Snack', 'Paket', 'Lainnya'];
 
@@ -183,7 +195,7 @@ export default function CantineMenuPage() {
             </span>
             <div>
               <h1 className="text-xl font-black tracking-tight text-gray-900">Katalog & Stok Kantin</h1>
-              <p className="text-xs text-gray-400 font-bold uppercase tracking-wider">Manajemen Produk & Stok POS petugas Kantin</p>
+              <p className="text-xs text-gray-400 font-bold uppercase tracking-wider">Harga Modal Asli, Harga Jual & Estimasi Keuntungan Produk</p>
             </div>
           </div>
         </div>
@@ -198,43 +210,68 @@ export default function CantineMenuPage() {
         </div>
       </div>
 
-      {/* Analytics Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      {/* Analytics Summary Cards (Termasuk Modal & Potensi Keuntungan) */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {/* Card 1: Total Jenis Menu */}
         <Card className="border border-gray-100 rounded-3xl bg-white shadow-sm overflow-hidden">
           <CardContent className="p-4 flex items-center justify-between">
             <div>
               <p className="text-[10px] font-black uppercase tracking-wider text-gray-400">Total Jenis Menu</p>
-              <h3 className="text-2xl font-black text-gray-900 mt-0.5">{totalItemsCount} <span className="text-xs font-bold text-gray-400">Item</span></h3>
+              <h3 className="text-xl font-black text-gray-900 mt-0.5">{totalItemsCount} <span className="text-xs font-bold text-gray-400">Item</span></h3>
+              <p className="text-[9px] text-gray-500 font-bold mt-0.5">{outOfStockCount > 0 ? `${outOfStockCount} menu habis` : 'Semua tersedia'}</p>
             </div>
-            <div className="h-12 w-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
-              <Boxes className="h-6 w-6" />
+            <div className="h-10 w-10 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+              <Boxes className="h-5 w-5" />
             </div>
           </CardContent>
         </Card>
 
+        {/* Card 2: Perlu Restock */}
         <Card className={cn(
           "border rounded-3xl shadow-sm overflow-hidden transition-all",
-          lowStockCount > 0 ? "border-amber-200 bg-amber-50/50" : "border-gray-100 bg-white"
+          lowStockCount > 0 || outOfStockCount > 0 ? "border-amber-200 bg-amber-50/50" : "border-gray-100 bg-white"
         )}>
           <CardContent className="p-4 flex items-center justify-between">
             <div>
-              <p className="text-[10px] font-black uppercase tracking-wider text-amber-700">Perlu Restock (Stok ≤ 5)</p>
-              <h3 className="text-2xl font-black text-amber-900 mt-0.5">{lowStockCount} <span className="text-xs font-bold text-amber-600">Menu</span></h3>
+              <p className="text-[10px] font-black uppercase tracking-wider text-amber-700">Perlu Restock (≤ 5)</p>
+              <h3 className="text-xl font-black text-amber-900 mt-0.5">{lowStockCount + outOfStockCount} <span className="text-xs font-bold text-amber-600">Menu</span></h3>
+              <p className="text-[9px] text-amber-700 font-bold mt-0.5">{outOfStockCount} stok habis, {lowStockCount} menipis</p>
             </div>
-            <div className="h-12 w-12 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center font-bold">
-              <AlertTriangle className="h-6 w-6" />
+            <div className="h-10 w-10 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center font-bold">
+              <AlertTriangle className="h-5 w-5" />
             </div>
           </CardContent>
         </Card>
 
+        {/* Card 3: Modal Stok Gudang (HPP) */}
         <Card className="border border-gray-100 rounded-3xl bg-white shadow-sm overflow-hidden">
           <CardContent className="p-4 flex items-center justify-between">
             <div>
-              <p className="text-[10px] font-black uppercase tracking-wider text-gray-400">Estimasi Nilai Stok</p>
-              <h3 className="text-xl font-black text-emerald-600 mt-0.5">Rp {totalStockValue.toLocaleString('id-ID')}</h3>
+              <p className="text-[10px] font-black uppercase tracking-wider text-gray-400">Modal Stok (HPP)</p>
+              <h3 className="text-lg font-black text-gray-800 mt-0.5">Rp {totalStockCost.toLocaleString('id-ID')}</h3>
+              <p className="text-[9px] text-gray-500 font-bold mt-0.5">Total modal barang tersisa</p>
             </div>
-            <div className="h-12 w-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
-              <DollarSign className="h-6 w-6" />
+            <div className="h-10 w-10 rounded-2xl bg-gray-100 text-gray-700 flex items-center justify-center font-bold">
+              <DollarSign className="h-5 w-5" />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Card 4: Potensi Keuntungan Stok */}
+        <Card className="border border-emerald-200 bg-emerald-50/40 rounded-3xl shadow-sm overflow-hidden">
+          <CardContent className="p-4 flex items-center justify-between">
+            <div>
+              <div className="flex items-center gap-1.5">
+                <p className="text-[10px] font-black uppercase tracking-wider text-emerald-800">Potensi Keuntungan</p>
+                <span className="text-[9px] font-black px-1.5 py-0.2 rounded-md bg-emerald-200 text-emerald-900">
+                  {averageMargin}% Laba
+                </span>
+              </div>
+              <h3 className="text-lg font-black text-emerald-700 mt-0.5">+Rp {potentialStockProfit.toLocaleString('id-ID')}</h3>
+              <p className="text-[9px] text-emerald-700 font-bold mt-0.5">Omzet Jual: Rp {totalStockValue.toLocaleString('id-ID')}</p>
+            </div>
+            <div className="h-10 w-10 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
+              <TrendingUp className="h-5 w-5" />
             </div>
           </CardContent>
         </Card>
@@ -309,6 +346,10 @@ export default function CantineMenuPage() {
             {filteredItems.map(item => {
               const isLow = item.stock <= 5 && item.stock > 0;
               const isEmpty = item.stock === 0;
+              const costPrice = item.cost_price || 0;
+              const unitProfit = Math.max(0, item.price - costPrice);
+              const marginPct = item.price > 0 ? Math.round((unitProfit / item.price) * 100) : 0;
+              const totalPotentialItemProfit = unitProfit * item.stock;
 
               return (
                 <Card 
@@ -336,9 +377,14 @@ export default function CantineMenuPage() {
                             {item.category || 'Makanan'}
                           </span>
                           <h3 className="font-black text-sm text-gray-900 truncate mt-1">{item.name}</h3>
-                          <p className="font-black text-primary text-base">
-                            Rp {item.price.toLocaleString('id-ID')}
-                          </p>
+                          <div className="flex items-baseline gap-2 mt-0.5">
+                            <span className="font-black text-primary text-base">
+                              Rp {item.price.toLocaleString('id-ID')}
+                            </span>
+                            <span className="text-[10px] text-gray-400 font-bold">
+                              Modal: Rp {costPrice.toLocaleString('id-ID')}
+                            </span>
+                          </div>
                         </div>
                       </div>
 
@@ -347,26 +393,49 @@ export default function CantineMenuPage() {
                         <button 
                           onClick={() => handleOpenEdit(item)}
                           className="h-8 w-8 rounded-xl bg-gray-100 text-gray-600 hover:bg-gray-200 flex items-center justify-center transition-colors"
+                          title="Edit Produk & Harga"
                         >
                           <Edit className="h-3.5 w-3.5" />
                         </button>
                         <button 
                           onClick={() => handleDelete(item.id, item.name)}
                           className="h-8 w-8 rounded-xl bg-rose-50 text-rose-600 hover:bg-rose-100 flex items-center justify-center transition-colors"
+                          title="Hapus Menu"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       </div>
                     </div>
 
+                    {/* Indikator Keuntungan / Laba Produk */}
+                    <div className="bg-emerald-50/70 border border-emerald-100 rounded-2xl p-2.5 flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-1.5">
+                        <TrendingUp className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                        <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800">Keuntungan / Porsi:</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="font-black text-emerald-700 text-xs">
+                          +Rp {unitProfit.toLocaleString('id-ID')}
+                        </span>
+                        <span className="ml-1 text-[10px] font-extrabold text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded-md">
+                          {marginPct}% Laba
+                        </span>
+                      </div>
+                    </div>
+
                     {/* Stock Quick Controller Bar */}
                     <div className="bg-gray-50 p-3 rounded-2xl border border-gray-100 space-y-2">
                       <div className="flex items-center justify-between text-xs">
-                        <span className="text-[10px] font-black uppercase tracking-wider text-gray-400">
-                          Sisa Stok Barang
-                        </span>
+                        <div>
+                          <span className="text-[10px] font-black uppercase tracking-wider text-gray-400 block">
+                            Sisa Stok
+                          </span>
+                          <span className="text-[9px] text-gray-500 font-bold">
+                            Potensi Laba Stok: Rp {totalPotentialItemProfit.toLocaleString('id-ID')}
+                          </span>
+                        </div>
                         <span className={cn(
-                          "font-black text-xs px-2.5 py-0.5 rounded-full",
+                          "font-black text-xs px-2.5 py-0.5 rounded-full shrink-0",
                           isEmpty ? "bg-rose-500 text-white" :
                           isLow ? "bg-amber-500 text-white animate-pulse" :
                           "bg-emerald-100 text-emerald-800"
@@ -434,57 +503,72 @@ export default function CantineMenuPage() {
                   <tr>
                     <th className="p-4">Nama Menu</th>
                     <th className="p-4">Kategori</th>
+                    <th className="p-4">Harga Modal (HPP)</th>
                     <th className="p-4">Harga Jual</th>
+                    <th className="p-4">Keuntungan / Porsi</th>
                     <th className="p-4">Sisa Stok</th>
                     <th className="p-4 text-center">Atur Stok Cepat</th>
                     <th className="p-4 text-right">Aksi</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 font-bold">
-                  {filteredItems.map(item => (
-                    <tr key={item.id} className="hover:bg-gray-50/50">
-                      <td className="p-4 font-black text-gray-900 text-sm">{item.name}</td>
-                      <td className="p-4">
-                        <span className="px-2.5 py-1 rounded-lg bg-gray-100 text-gray-600 text-[10px] uppercase font-extrabold">
-                          {item.category || 'Makanan'}
-                        </span>
-                      </td>
-                      <td className="p-4 text-primary font-black text-sm">Rp {item.price.toLocaleString('id-ID')}</td>
-                      <td className="p-4">
-                        <span className={cn(
-                          "px-2.5 py-1 rounded-full text-[11px] font-extrabold",
-                          item.stock === 0 ? "bg-rose-100 text-rose-700" :
-                          item.stock <= 5 ? "bg-amber-100 text-amber-700" :
-                          "bg-emerald-100 text-emerald-800"
-                        )}>
-                          {item.stock} {item.stock === 0 ? '(Habis)' : 'unit'}
-                        </span>
-                      </td>
-                      <td className="p-4">
-                        <div className="flex items-center justify-center gap-1">
-                          <Button size="sm" variant="outline" onClick={() => handleQuickAdjustStock(item.id, -1)} className="h-7 px-2 rounded-lg text-xs">
-                            -1
-                          </Button>
-                          <Button size="sm" variant="outline" onClick={() => handleQuickAdjustStock(item.id, 1)} className="h-7 px-2 rounded-lg text-xs">
-                            +1
-                          </Button>
-                          <Button size="sm" variant="secondary" onClick={() => handleQuickAdjustStock(item.id, 5)} className="h-7 px-2 rounded-lg text-xs bg-emerald-50 text-emerald-700">
-                            +5
-                          </Button>
-                        </div>
-                      </td>
-                      <td className="p-4 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <Button size="icon" variant="ghost" onClick={() => handleOpenEdit(item)} className="h-8 w-8 rounded-xl bg-gray-100">
-                            <Edit className="h-3.5 w-3.5 text-gray-600" />
-                          </Button>
-                          <Button size="icon" variant="ghost" onClick={() => handleDelete(item.id, item.name)} className="h-8 w-8 rounded-xl bg-rose-50 text-rose-600">
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {filteredItems.map(item => {
+                    const costPrice = item.cost_price || 0;
+                    const unitProfit = Math.max(0, item.price - costPrice);
+                    const marginPct = item.price > 0 ? Math.round((unitProfit / item.price) * 100) : 0;
+
+                    return (
+                      <tr key={item.id} className="hover:bg-gray-50/50">
+                        <td className="p-4 font-black text-gray-900 text-sm">{item.name}</td>
+                        <td className="p-4">
+                          <span className="px-2.5 py-1 rounded-lg bg-gray-100 text-gray-600 text-[10px] uppercase font-extrabold">
+                            {item.category || 'Makanan'}
+                          </span>
+                        </td>
+                        <td className="p-4 text-gray-600 font-mono">Rp {costPrice.toLocaleString('id-ID')}</td>
+                        <td className="p-4 text-primary font-black text-sm font-mono">Rp {item.price.toLocaleString('id-ID')}</td>
+                        <td className="p-4">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-black bg-emerald-100 text-emerald-800">
+                            <TrendingUp className="h-3 w-3 text-emerald-600" />
+                            +Rp {unitProfit.toLocaleString('id-ID')} ({marginPct}%)
+                          </span>
+                        </td>
+                        <td className="p-4">
+                          <span className={cn(
+                            "px-2.5 py-1 rounded-full text-[11px] font-extrabold",
+                            item.stock === 0 ? "bg-rose-100 text-rose-700" :
+                            item.stock <= 5 ? "bg-amber-100 text-amber-700" :
+                            "bg-emerald-100 text-emerald-800"
+                          )}>
+                            {item.stock} {item.stock === 0 ? '(Habis)' : 'unit'}
+                          </span>
+                        </td>
+                        <td className="p-4">
+                          <div className="flex items-center justify-center gap-1">
+                            <Button size="sm" variant="outline" onClick={() => handleQuickAdjustStock(item.id, -1)} className="h-7 px-2 rounded-lg text-xs">
+                              -1
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={() => handleQuickAdjustStock(item.id, 1)} className="h-7 px-2 rounded-lg text-xs">
+                              +1
+                            </Button>
+                            <Button size="sm" variant="secondary" onClick={() => handleQuickAdjustStock(item.id, 5)} className="h-7 px-2 rounded-lg text-xs bg-emerald-50 text-emerald-700">
+                              +5
+                            </Button>
+                          </div>
+                        </td>
+                        <td className="p-4 text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button size="icon" variant="ghost" onClick={() => handleOpenEdit(item)} className="h-8 w-8 rounded-xl bg-gray-100">
+                              <Edit className="h-3.5 w-3.5 text-gray-600" />
+                            </Button>
+                            <Button size="icon" variant="ghost" onClick={() => handleDelete(item.id, item.name)} className="h-8 w-8 rounded-xl bg-rose-50 text-rose-600">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -503,13 +587,13 @@ export default function CantineMenuPage() {
 
       {/* Modal Dialog Tambah / Edit Menu */}
       <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-        <DialogContent className="rounded-3xl max-w-md bg-white border border-gray-100 shadow-2xl">
+        <DialogContent className="rounded-3xl max-w-lg bg-white border border-gray-100 shadow-2xl">
           <DialogHeader>
             <DialogTitle className="text-lg font-black tracking-tight text-gray-900">
-              {editingItem ? 'Edit Menu Kantin' : 'Tambah Menu Baru'}
+              {editingItem ? 'Edit Menu & Harga Kantin' : 'Tambah Menu Baru'}
             </DialogTitle>
             <DialogDescription className="text-xs text-gray-500 font-bold">
-              Isi rincian nama, kategori, harga jual, dan jumlah stok barang kantin.
+              Atur harga modal (asli) dan harga jual untuk perhitungan keuntungan laba otomatis.
             </DialogDescription>
           </DialogHeader>
 
@@ -525,37 +609,117 @@ export default function CantineMenuPage() {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs font-black uppercase text-gray-500">Kategori</Label>
-                <Select value={formCategory} onValueChange={setFormCategory}>
-                  <SelectTrigger className="h-11 rounded-2xl text-xs font-bold border-gray-200">
-                    <SelectValue placeholder="Pilih Kategori" />
-                  </SelectTrigger>
-                  <SelectContent className="rounded-xl">
-                    <SelectItem value="Makanan">🍱 Makanan</SelectItem>
-                    <SelectItem value="Minuman">🥤 Minuman</SelectItem>
-                    <SelectItem value="Snack">🍿 Snack</SelectItem>
-                    <SelectItem value="Paket">🍱 Paket Hemat</SelectItem>
-                    <SelectItem value="Lainnya">📦 Lainnya</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs font-black uppercase text-gray-500">Harga Jual (Rp)</Label>
-                <Input 
-                  type="number"
-                  value={formPrice}
-                  onChange={(e) => setFormPrice(e.target.value)}
-                  placeholder="Contoh: 12000"
-                  min="0"
-                  required
-                  className="h-11 rounded-2xl text-xs font-bold border-gray-200"
-                />
-              </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-black uppercase text-gray-500">Kategori</Label>
+              <Select value={formCategory} onValueChange={setFormCategory}>
+                <SelectTrigger className="h-11 rounded-2xl text-xs font-bold border-gray-200">
+                  <SelectValue placeholder="Pilih Kategori" />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl">
+                  <SelectItem value="Makanan">🍱 Makanan</SelectItem>
+                  <SelectItem value="Minuman">🥤 Minuman</SelectItem>
+                  <SelectItem value="Snack">🍿 Snack</SelectItem>
+                  <SelectItem value="Paket">🍱 Paket Hemat</SelectItem>
+                  <SelectItem value="Lainnya">📦 Lainnya</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
+            {/* Bagian Finansial: Harga Modal & Harga Jual */}
+            <div className="bg-gray-50 p-4 rounded-2xl border border-gray-200/80 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                {/* Harga Modal (Asli) */}
+                <div className="space-y-1.5">
+                  <div className="flex justify-between items-center">
+                    <Label className="text-xs font-black uppercase text-gray-700">Harga Modal (Rp)</Label>
+                    <span className="text-[9px] text-gray-400 font-bold">HPP Asli</span>
+                  </div>
+                  <Input 
+                    type="number"
+                    value={formCostPrice}
+                    onChange={(e) => setFormCostPrice(e.target.value)}
+                    placeholder="Misal: 8000"
+                    min="0"
+                    className="h-11 rounded-2xl text-xs font-bold border-gray-200 bg-white"
+                  />
+                </div>
+
+                {/* Harga Jual ke Pelanggan */}
+                <div className="space-y-1.5">
+                  <div className="flex justify-between items-center">
+                    <Label className="text-xs font-black uppercase text-gray-900">Harga Jual (Rp)</Label>
+                    <span className="text-[9px] text-primary font-bold">Ke Siswa</span>
+                  </div>
+                  <Input 
+                    type="number"
+                    value={formPrice}
+                    onChange={(e) => setFormPrice(e.target.value)}
+                    placeholder="Misal: 12000"
+                    min="0"
+                    required
+                    className="h-11 rounded-2xl text-xs font-bold border-primary/40 focus-visible:ring-primary bg-white text-primary font-black"
+                  />
+                </div>
+              </div>
+
+              {/* Tombol Pintasan Markup Margin Otomatis */}
+              {parseInt(formCostPrice || '0') > 0 && (
+                <div className="flex items-center gap-1.5 pt-1">
+                  <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wider shrink-0">
+                    Set Laba Cepat:
+                  </span>
+                  {[20, 30, 50, 100].map(pct => {
+                    const cost = parseInt(formCostPrice || '0');
+                    const targetPrice = Math.round((cost * (1 + pct / 100)) / 500) * 500;
+                    return (
+                      <button
+                        key={pct}
+                        type="button"
+                        onClick={() => setFormPrice(targetPrice.toString())}
+                        className="px-2 py-0.5 rounded-lg text-[10px] font-black bg-white border border-gray-200 hover:border-primary text-gray-700 hover:text-primary transition-colors shadow-2xs"
+                      >
+                        +{pct}%
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Live Preview Box Estimasi Laba / Margin */}
+              {parseInt(formPrice || '0') > 0 && (
+                <div className={cn(
+                  "p-3 rounded-xl border flex items-center justify-between text-xs transition-all",
+                  (parseInt(formPrice || '0') - (parseInt(formCostPrice || '0') || 0)) >= 0
+                    ? "bg-emerald-100/60 border-emerald-200 text-emerald-950"
+                    : "bg-rose-50 border-rose-200 text-rose-800"
+                )}>
+                  <div className="flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4 text-emerald-600" />
+                    <div>
+                      <p className="font-black text-xs">
+                        {(parseInt(formPrice || '0') - (parseInt(formCostPrice || '0') || 0)) >= 0 ? (
+                          `Estimasi Laba: +Rp ${(parseInt(formPrice || '0') - (parseInt(formCostPrice || '0') || 0)).toLocaleString('id-ID')} / porsi`
+                        ) : (
+                          `Rugi Rp ${Math.abs(parseInt(formPrice || '0') - (parseInt(formCostPrice || '0') || 0)).toLocaleString('id-ID')} (Harga Jual < Modal)`
+                        )}
+                      </p>
+                      <p className="text-[10px] text-gray-500">
+                        Margin Laba: {parseInt(formPrice || '0') > 0 
+                          ? Math.round(((parseInt(formPrice || '0') - (parseInt(formCostPrice || '0') || 0)) / parseInt(formPrice || '0')) * 100) 
+                          : 0}% dari harga jual
+                      </p>
+                    </div>
+                  </div>
+                  <span className="font-mono font-black text-sm text-emerald-700 bg-white px-2 py-0.5 rounded-lg border border-emerald-200 shadow-2xs">
+                    {parseInt(formPrice || '0') > 0 
+                      ? Math.round(((parseInt(formPrice || '0') - (parseInt(formCostPrice || '0') || 0)) / parseInt(formPrice || '0')) * 100) 
+                      : 0}%
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Stok Awal */}
             <div className="space-y-1.5">
               <div className="flex justify-between items-center">
                 <Label className="text-xs font-black uppercase text-gray-500">Jumlah Stok Awal</Label>
@@ -588,7 +752,7 @@ export default function CantineMenuPage() {
                 Batal
               </Button>
               <Button type="submit" disabled={submitting} className="flex-1 rounded-xl font-black bg-primary text-white">
-                {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Simpan Menu'}
+                {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : (editingItem ? 'Simpan Perubahan' : 'Tambah Menu')}
               </Button>
             </DialogFooter>
           </form>

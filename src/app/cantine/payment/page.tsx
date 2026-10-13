@@ -554,7 +554,7 @@ export default function CantinePOSPage() {
                     <span className="text-xs font-bold text-white/60">{cart.reduce((a, c) => a + c.qty, 0)} Items</span>
                   </div>
 
-                  {/* Dual Action POS Checkout Buttons */}
+                  {/* Dual Action POS Checkout Buttons: Cash (Emerald Green) & ATM (Banking Blue) */}
                   <div className="grid grid-cols-2 gap-2">
                     <Button 
                       disabled={cart.length === 0}
@@ -564,9 +564,9 @@ export default function CantinePOSPage() {
                         setCustomerName('Pembeli Umum');
                         setState('CASH_INPUT');
                       }}
-                      className="w-full bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black h-12 rounded-xl shadow-lg flex items-center justify-center gap-1.5 text-xs uppercase tracking-wider"
+                      className="w-full bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-black h-12 rounded-xl shadow-lg shadow-emerald-900/30 flex items-center justify-center gap-1.5 text-xs uppercase tracking-wider border border-emerald-400/40"
                     >
-                      <Banknote className="h-4 w-4" /> Bayar Tunai
+                      <Banknote className="h-4 w-4 text-emerald-200" /> Bayar Tunai (Cash)
                     </Button>
                     <Button 
                       disabled={cart.length === 0}
@@ -574,9 +574,9 @@ export default function CantinePOSPage() {
                         setPayMethod('TABUNGAN');
                         setState('SCANNING');
                       }}
-                      className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black h-12 rounded-xl shadow-lg flex items-center justify-center gap-1.5 text-xs uppercase tracking-wider"
+                      className="w-full bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-black h-12 rounded-xl shadow-lg shadow-blue-900/30 flex items-center justify-center gap-1.5 text-xs uppercase tracking-wider border border-blue-400/40"
                     >
-                      <ScanLine className="h-4 w-4" /> Scan Kartu
+                      <ScanLine className="h-4 w-4 text-blue-200" /> ATM / Tabungan
                     </Button>
                   </div>
                 </div>
@@ -584,40 +584,45 @@ export default function CantinePOSPage() {
             </div>
           )}
 
-          {/* STEP 1.5: METHOD SELECTION (Tabungan vs Tunai) */}
+          {/* STEP 1.5: METHOD SELECTION (Tabungan / ATM vs Tunai / Cash) */}
           {state === 'METHOD_SELECT' && (
             <div className="flex flex-col items-center w-full max-w-md space-y-5 flex-1 justify-center my-auto">
               <div className="text-center space-y-1">
-                <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">METODE PEMBAYARAN</span>
-                <h2 className="text-xl font-black text-gray-900 tracking-tight">Pilih Pembayaran</h2>
-                <p className="text-xs text-emerald-600 font-bold bg-emerald-50 px-3 py-1 rounded-full inline-block border border-emerald-200">
+                <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">METODE PEMBAYARAN KANTIN</span>
+                <h2 className="text-xl font-black text-gray-900 tracking-tight">Pilih Jalur Transaksi</h2>
+                <p className="text-xs text-emerald-700 font-bold bg-emerald-50 px-3 py-1 rounded-full inline-block border border-emerald-200">
                   Total Tagihan: Rp {finalAmount.toLocaleString('id-ID')}
                 </p>
               </div>
 
               <div className="grid grid-cols-1 gap-3 w-full">
-                {/* OPSI 1: TABUNGAN SISWA */}
+                {/* OPSI 1: TABUNGAN SISWA (ATM) - Banking Blue */}
                 <button
                   type="button"
                   onClick={() => {
                     setPayMethod('TABUNGAN');
                     setState('SCANNING');
                   }}
-                  className="p-4 rounded-3xl border-2 border-primary/20 bg-primary/5 hover:bg-primary/10 transition-all text-left flex items-center justify-between group shadow-sm"
+                  className="p-4 rounded-3xl border-2 border-blue-400/50 bg-blue-50/70 hover:bg-blue-100/80 transition-all text-left flex items-center justify-between group shadow-sm hover:shadow-md"
                 >
                   <div className="flex items-center gap-3.5">
-                    <div className="h-12 w-12 rounded-2xl bg-primary text-white flex items-center justify-center shadow-md">
+                    <div className="h-12 w-12 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-md shadow-blue-600/30">
                       <Wallet className="h-6 w-6" />
                     </div>
                     <div>
-                      <h3 className="font-black text-sm text-gray-900">Tabungan Siswa (NFC / QR / NIS)</h3>
-                      <p className="text-[11px] text-gray-500 font-medium">Potong saldo tabungan siswa via PIN</p>
+                      <div className="flex items-center gap-1.5">
+                        <h3 className="font-black text-sm text-gray-900">Tabungan Siswa (ATM / Kartu)</h3>
+                        <span className="text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-600 text-white shadow-2xs">
+                          ATM
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-blue-900/70 font-medium">Potong saldo tabungan santri via PIN / QR Kiosk</p>
                     </div>
                   </div>
-                  <ArrowRight className="h-5 w-5 text-primary group-hover:translate-x-1 transition-transform" />
+                  <ArrowRight className="h-5 w-5 text-blue-600 group-hover:translate-x-1 transition-transform" />
                 </button>
 
-                {/* OPSI 2: PEMBAYARAN TUNAI (CASH) */}
+                {/* OPSI 2: PEMBAYARAN TUNAI (CASH) - Emerald Green */}
                 <button
                   type="button"
                   onClick={() => {
@@ -626,15 +631,20 @@ export default function CantinePOSPage() {
                     setCustomerName('Pembeli Umum');
                     setState('CASH_INPUT');
                   }}
-                  className="p-4 rounded-3xl border-2 border-emerald-200 bg-emerald-50/50 hover:bg-emerald-100/50 transition-all text-left flex items-center justify-between group shadow-sm"
+                  className="p-4 rounded-3xl border-2 border-emerald-400/50 bg-emerald-50/70 hover:bg-emerald-100/80 transition-all text-left flex items-center justify-between group shadow-sm hover:shadow-md"
                 >
                   <div className="flex items-center gap-3.5">
-                    <div className="h-12 w-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-md">
+                    <div className="h-12 w-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-md shadow-emerald-600/30">
                       <Banknote className="h-6 w-6" />
                     </div>
                     <div>
-                      <h3 className="font-black text-sm text-gray-900">Pembayaran Tunai (Cash)</h3>
-                      <p className="text-[11px] text-gray-500 font-medium">Tanpa scan kartu • Terima tunai & hitung kembalian</p>
+                      <div className="flex items-center gap-1.5">
+                        <h3 className="font-black text-sm text-gray-900">Pembayaran Tunai (Cash Fisik)</h3>
+                        <span className="text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-600 text-white shadow-2xs">
+                          CASH
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-emerald-900/70 font-medium">Tanpa scan kartu • Terima uang fisik & laci kasir</p>
                     </div>
                   </div>
                   <ArrowRight className="h-5 w-5 text-emerald-600 group-hover:translate-x-1 transition-transform" />
@@ -980,9 +990,24 @@ export default function CantinePOSPage() {
                       <CheckCircle2 className="h-8 w-8 text-emerald-600" />
                   </div>
                   
-                  <div className="space-y-0.5">
+                  <div className="space-y-1.5">
                       <h2 className="text-xl font-black text-gray-900 tracking-tight">PEMBAYARAN BERHASIL</h2>
                       <p className="text-gray-400 font-bold text-[9px] uppercase tracking-widest">Transaksi & Stok Telah Terpotong</p>
+                      
+                      {/* Visual Badge Identitas Pembayaran */}
+                      <div className="pt-1">
+                        {payMethod === 'TUNAI' ? (
+                          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs">
+                            <Banknote className="h-3.5 w-3.5 text-emerald-600" />
+                            <span>CASH / TUNAI (LACI KASIR)</span>
+                          </div>
+                        ) : (
+                          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-blue-100 text-blue-800 border border-blue-300 shadow-2xs">
+                            <Wallet className="h-3.5 w-3.5 text-blue-600" />
+                            <span>ATM / TABUNGAN SISWA</span>
+                          </div>
+                        )}
+                      </div>
                   </div>
 
                   {/* Struk Thermal POS Card - Warna Hitam Pekat Khusus Thermal & Print Jelas */}

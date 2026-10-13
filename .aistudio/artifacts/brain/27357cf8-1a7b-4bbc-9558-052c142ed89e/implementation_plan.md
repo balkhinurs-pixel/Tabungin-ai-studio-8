@@ -1,75 +1,110 @@
-# Solusi Profesional Transaksi Tunai Kasir Kantin
+# Visualisasi Badge Cash & ATM serta Sistem Harga Modal & Keuntungan Kantin
 
-Rencana penyempurnaan transaksi kasir kantin untuk pembayaran tunai tanpa ID santri dengan tampilan bersih, elegan, dan profesional tanpa mengekspos kode SQL ke antarmuka kasir.
+Pembaruan ini meningkatkan estetika visual identitas transaksi (Cash bernuansa Emerald Green dan ATM bernuansa Banking Blue) di seluruh antarmuka kantin, serta menambahkan pencatatan **Harga Modal (Harga Asli)** di samping **Harga Jual** untuk menghitung estimasi laba kotor per porsi, margin persentase, dan total laba riwayat penjualan.
 
-## User Decisions & Revisions
+---
+
+### User Review & Critical Decisions
 
 > [!IMPORTANT]
-> **Revisi Utama**:
-> - **Zero Technical Clutter di Layar Kasir**: Tidak menampilkan kode SQL, query database, atau istilah teknis pada layar kasir (POS) agar tampilan tetap profesional dan nyaman bagi petugas kasir.
-> - **Self-Healing / Fallback Cerdas di Backend**: Jika database Supabase belum sempat dijalankan `ALTER TABLE` (kolom `student_id` masih `NOT NULL`), sistem backend otomatis mengaitkan transaksi kasir ke entri sistem `Pembeli Umum Kantin` sehingga kasir tidak akan pernah mengalami transaksi gagal/macet.
-> - **Panduan SQL untuk Admin**: Perintah SQL pembaruan database tetap disediakan di dokumentasi teknis (`SUPABASE_ADDITIONAL_SQL.md`, `supabase/schema.sql`) dan menu Pengaturan Admin khusus.
+> Ringkasan keputusan yang telah dikonfirmasi:
+> - **Warna Badge & Metode Pembayaran**: 
+>   - **Cash (Tunai)**: Hijau emerald elegan (`emerald-600` / `emerald-700`, latar lembut `emerald-50`, border `emerald-200`).
+>   - **ATM / Non-Tunai**: Biru perbankan modern (`blue-600` / `indigo-600`, latar lembut `blue-50`, border `blue-200`).
+> - **Skema Harga Modal & Keuntungan**:
+>   - Menambahkan input **Harga Modal (Beli/HPP)** di form tambah/edit menu (`/cantine/menu`).
+>   - Menampilkan kalkulasi **Laba per Porsi (Rp)** dan **Margin (%)** langsung di kartu katalog menu.
+>   - Menyajikan metrik **Estimasi Total Laba Bersih/Kotor** di ringkasan Laporan & Riwayat Transaksi (`/cantine/history`).
+>   - Mendukung fallback aman (jika database belum memiliki kolom modal, sistem menyimpan dan menghitung secara mulus dengan estimasi cadangan tanpa mengganggu operasional kasir).
 
 ---
 
-## 1. Arsitektur & Penanganan Cerdas di Backend
+### 1. Overview & Core Concept
 
-### A. Dual-Strategy di Server Action (`src/app/cantine/actions.ts`)
-Saat kasir memproses `processCashPaymentAction` dengan pembeli umum (tanpa scan kartu):
-1. **Langkah 1 (Primary)**: Sistem mencoba menyimpan transaksi dengan `student_id: null`.
-2. **Langkah 2 (Automatic Fallback / Self-Healing)**:
-   - Jika Supabase mengembalikan error `violates not-null constraint` pada `student_id`:
-   - Backend secara otomatis mendeteksi dan mencari/membuat entri akun virtual:
-     - Nama: `Pembeli Umum (Kas Kantin)`
-     - NIS: `CASH-UMUM`
-     - Kelas: `Umum / Kasir`
-   - Menyimpan transaksi menggunakan ID akun virtual tersebut dengan catatan nama pembeli asli (misal: "Tamu", "Guru", atau nama pembeli manual).
-3. **Hasil**: Transaksi kasir **langsung sukses seketika**, stok barang terpotong tepat, struk tercetak rapi, dan kasir tidak terganggu oleh error database.
+- **Apa Fungsinya**: 
+  1. Memberikan diferensiasi visual yang kontras, segar, dan profesional antara pembayaran Cash (Tunai) dan ATM (Debit/RFID/Non-tunai) di kasir POS (`/cantine/payment`) dan riwayat laporan (`/cantine/history`).
+  2. Memungkinkan pengelola kantin menentukan harga pokok penjualan (HPP / modal) dari setiap menu untuk mengetahui berapa laba bersih per produk yang terjual dan total keuntungan penjualan harian/bulanan.
+- **Target Pengguna**: Kasir kantin, pemilik stand/outlet kantin, dan admin sekolah.
+- **Nilai Utama**: Kasir tidak lagi bingung membedakan jenis transaksi secara cepat, dan pemilik kantin memiliki transparansi penuh atas keuntungan riil, bukan sekadar omzet kotor.
 
 ---
 
-## 2. Tampilan Kasir Profesional (Zero-SQL UI)
+### 2. User Experience & Visual Design
 
-### A. Layar Kasir POS (`src/app/cantine/payment/page.tsx`)
-- **Tampilan Bersih**: Menjaga estetika antarmuka POS tetap modern, minimalis, dan berstandar SaaS kasir ritel.
-- **Notifikasi Ramah Operasional**:
-  - Jika terjadi kendala jaringan atau kegagalan lainnya, hanya menampilkan pesan operasional ramah seperti:
-    *"Gagal memproses transaksi. Silakan periksa koneksi internet atau ulangi kembali."*
-  - Tidak ada popup query SQL atau error database mentah di layar kasir.
+#### A. Identitas Warna Metode Pembayaran
+- **Cash (Tunai)**:
+  - Badge Riwayat: Teks emerald pekat dengan latar hijau mint lembut, dilengkapi ikon uang/dompet (`Banknote`).
+  - Tombol POS: Efek highlight emerald saat opsi Cash dipilih, aksen border tegas `border-emerald-500`, dan ring fokus lembut.
+- **ATM (Non-Tunai / RFID Tabungan Siswa)**:
+  - Badge Riwayat: Teks biru perbankan kobalt dengan latar biru lembut, dilengkapi ikon kartu/chip (`CreditCard`).
+  - Tombol POS: Efek highlight biru perbankan saat ATM dipilih, aksen border tegas `border-blue-600`.
 
-### B. Struk Pembayaran & Riwayat Transaksi
-- Struk kasir tetap mencantumkan identitas yang jelas:
-  - `METODE: TUNAI (CASH)`
-  - `PEMBELI: Pembeli Umum` (atau nama kustom yang dimasukkan kasir)
-  - `KASIR: Petugas Kantin`
-  - Total belanja, nominal uang tunai, dan kembalian.
-- Di halaman riwayat (`/cantine/history/page.tsx`), transaksi tunai tampil dengan lencana badge `TUNAI` yang membedakan uang fisik di laci dengan transaksi tabungan santri.
+#### B. Pengelolaan Harga Modal & Keuntungan Menu (`/cantine/menu`)
+- **Modal Form Tambah / Edit**:
+  - Kolom **Harga Jual** (Harga yang dibayar siswa/pembeli).
+  - Kolom baru **Harga Modal / Asli** (Biaya pokok belanja bahan atau harga titipan per porsi).
+  - **Live Preview Laba**: Kotak kalkulator otomatis yang seketika menghitung `Laba = Harga Jual - Harga Modal` dan `Margin = (Laba / Harga Jual) * 100%`.
+- **Kartu Produk di Katalog**:
+  - Tampilan harga jelas dengan pemisahan:
+    - Harga Jual: `Rp X.XXX` (tebal, visual primer).
+    - Harga Modal: `Modal: Rp Y.YYY` (abu-abu teratur, `tabular-nums`).
+    - Laba/Margin: `+Rp Z.ZZZ (M%)` dengan warna emerald positif.
 
----
-
-## 3. Pembaruan Skema & Dokumentasi Database
-
-Bagi administrator/developer yang ingin menjalankan migrasi agar `student_id` benar-benar nullable:
-- **Perintah SQL**:
-  ```sql
-  -- Mengubah kolom student_id pada tabel transactions menjadi opsional (NULL)
-  ALTER TABLE public.transactions ALTER COLUMN student_id DROP NOT NULL;
-  ```
-- **File yang diperbarui**:
-  - `SUPABASE_ADDITIONAL_SQL.md`
-  - `supabase/schema.sql`
-  - `docs/update_cantine.sql`
+#### C. Laporan & Riwayat Penjualan (`/cantine/history`)
+- Menambahkan kartu ringkasan keuangan di atas tabel/daftar riwayat:
+  - **Total Omzet Kotor** (Total pendapatan masuk).
+  - **Estimasi Modal Terpakai** (HPP produk terjual).
+  - **Estimasi Laba Kotor** (Omzet dikurangi modal).
+- Setiap item transaksi yang diperluas menampilkan estimasi keuntungan produk tersebut.
 
 ---
 
-## 4. Rencana Langkah Kerja (Implementation Steps)
+### 3. Key Product Decisions & Trade-Offs
 
-1. **Pembaruan `src/app/cantine/actions.ts`**:
-   - Implementasikan fungsi fallback otomatis `getOrCreateGeneralBuyerStudentId()`.
-   - Modifikasi `processCashPaymentAction`: Coba simpan dengan `student_id: null`. Jika ditolak oleh not-null constraint, otomatis fallback ke akun virtual pembeli umum.
-2. **Pembersihan Pesan Error di `src/app/cantine/payment/page.tsx`**:
-   - Pastikan toast / alert hanya menampilkan pesan berbahasa Indonesia yang sopan dan profesional untuk kasir.
-3. **Pembaruan Berkas Skema Database**:
-   - Perbarui `supabase/schema.sql` dan `SUPABASE_ADDITIONAL_SQL.md`.
-4. **Pengujian & Kompilasi**:
-   - Jalankan `compile_applet` untuk memastikan seluruh tipe data, komponen, dan endpoint lulus validasi.
+- **Penanganan Kolom `cost_price`**:
+  - *Pendekatan*: Input harga modal disimpan di database (`cost_price` pada tabel `canteen_items`). Jika skema database belum memiliki kolom tersebut, kode server actions menangani fallback secara anggun tanpa crash dan tetap menampilkan kalkulasi modal berbasis data terkini.
+  - *Alasan*: Menjamin keandalan transaksi kasir agar tidak pernah terganggu oleh perbedaan schema SQL runtime.
+- **Keterbacaan Angka Finansial**:
+  - Semua angka mata uang dan persentase menggunakan styling `tabular-nums font-mono` agar rata vertikal saat dibandingkan.
+- **Kepatuhan Desain Anti-Slop**:
+  - Menghindari kapsul pill bertumpuk; menggunakan pembatas tipis elegan, kontras warna yang nyaman untuk mata kasir yang bekerja berjam-jam, dan tipografi `Plus Jakarta Sans`.
+
+---
+
+### 4. Technical Architecture & Data Strategy
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                       KASIR & PENGELOLA                     │
+└──────────────┬──────────────────────────────┬───────────────┘
+               │                              │
+               ▼                              ▼
+┌──────────────────────────────┐ ┌────────────────────────────┐
+│      /cantine/payment        │ │       /cantine/menu        │
+│ - Badge Cash: Emerald Green  │ │ - Input: Harga Jual & Modal│
+│ - Badge ATM: Banking Blue    │ │ - Live Margin Preview      │
+│ - Transaksi Berwarna Tegas   │ │ - Quick Stock & Margin Card│
+└──────────────┬───────────────┘ └────────────┬───────────────┘
+               │                              │
+               ▼                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                 Server Actions (actions.ts)                 │
+│ - addCanteenItemAction (terima cost_price)                  │
+│ - updateCanteenItemAction (update cost_price)               │
+│ - getCantineTransactionsAction (rekap omzet & estimasi laba)│
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│                      /cantine/history                       │
+│ - KPI Cards: Total Omzet, Estimasi Modal, Total Laba Bersih │
+│ - Filter Waktu (Hari Ini, 7 Hari, Bulan Ini)                │
+│ - Tag Cash (Emerald) & ATM (Blue) Kontras & Rapi            │
+└─────────────────────────────────────────────────────────────┘
+```
+
+- **Komponen yang Diperbarui**:
+  1. `src/app/cantine/menu/page.tsx`: Form modal tambah/edit produk, kartu katalog menu dengan info modal & laba, kartu statistik total nilai modal & potensi omzet.
+  2. `src/app/cantine/actions.ts`: Penanganan field `cost_price` pada operasi CRUD menu dan kalkulasi estimasi laba pada rekap riwayat.
+  3. `src/app/cantine/history/page.tsx`: Pembaruan badge visual warna Cash (Emerald Green) dan ATM (Banking Blue), serta penambahan card rekapitulasi laba dan modal.
+  4. `src/app/cantine/payment/page.tsx`: Penyelarasan visual badge metode pembayaran dan opsi checkout Cash vs Tabungan/ATM.

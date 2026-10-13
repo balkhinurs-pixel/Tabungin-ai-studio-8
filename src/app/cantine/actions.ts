@@ -9,6 +9,7 @@ import { triggerSingleStudentLowBalanceWA } from '../settings/fonnte-actions';
 
 /**
  * Mengambil daftar transaksi khusus untuk outlet yang sedang login dengan dukungan filter.
+ * Dilengkapi konversi cerdas zona waktu WIB (UTC+7) agar transaksi pagi/baru langsung terdeteksi.
  */
 export async function getCantineTransactionsAction(filters?: {
     dateFrom?: string;
@@ -22,6 +23,29 @@ export async function getCantineTransactionsAction(filters?: {
     if (!user) return [];
 
     const supabaseAdmin = getSupabaseAdmin();
+
+    // 1. Dapatkan profil akun yang sedang login untuk resolusi sekolah/outlet
+    const { data: userProfile } = await supabaseAdmin
+        .from('profiles')
+        .select('id, role, school_code')
+        .eq('id', user.id)
+        .maybeSingle();
+
+    let userIds = [user.id];
+
+    // Jika akun memiliki kode sekolah, sertakan akun kantin / admin di sekolah yang sama
+    // agar data penjualan kasir selalu terdeteksi bagi pihak pengelola
+    if (userProfile?.school_code) {
+        const { data: schoolProfiles } = await supabaseAdmin
+            .from('profiles')
+            .select('id')
+            .eq('school_code', userProfile.school_code)
+            .in('role', ['CANTINE', 'ADMIN', 'GURU', 'TEACHER']);
+
+        if (schoolProfiles && schoolProfiles.length > 0) {
+            userIds = Array.from(new Set([user.id, ...schoolProfiles.map(p => p.id)]));
+        }
+    }
     
     let query = supabaseAdmin
         .from('transactions')
@@ -32,28 +56,46 @@ export async function getCantineTransactionsAction(filters?: {
                 class,
                 nis
             )
-        `)
-        .eq('user_id', user.id)
-        .eq('category', 'BELANJA_KANTIN');
+        `);
+
+    if (userIds.length > 1) {
+        query = query.in('user_id', userIds);
+    } else {
+        query = query.eq('user_id', user.id);
+    }
+
+    // Ambil seluruh transaksi kantin (baik via BELANJA_KANTIN maupun deskripsi penjualan tunai)
+    query = query.or('category.eq.BELANJA_KANTIN,category.eq.KANTIN,description.ilike.Tunai%,description.ilike.Penjualan Tunai%');
 
     // Filter Status Pencairan
     if (filters?.unsettledOnly) {
         query = query.eq('is_settled', false);
     }
 
-    // Filter Metode Pembayaran
-    if (filters?.paymentMethod === 'CASH') {
-        query = query.or('student_id.is.null,description.ilike.Tunai%,description.ilike.Penjualan Tunai%');
-    } else if (filters?.paymentMethod === 'TABUNGAN') {
-        query = query.not('student_id', 'is', null).not('description', 'ilike', 'Tunai%').not('description', 'ilike', 'Penjualan Tunai%');
+    // 2. Filter Rentang Tanggal yang Sadar Zona Waktu (WIB / UTC+7)
+    // Format tanggal input adalah YYYY-MM-DD dari browser kasir.
+    // Pukul 00:00:00 WIB = Pukul 17:00:00 UTC kemarin.
+    // Pukul 23:59:59.999 WIB = Pukul 16:59:59.999 UTC hari ini.
+    if (filters?.dateFrom) {
+        let dateGteUtc = filters.dateFrom;
+        if (!dateGteUtc.includes('T')) {
+            const [y, m, d] = filters.dateFrom.split('-').map(Number);
+            if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+                dateGteUtc = new Date(Date.UTC(y, m - 1, d, 0, 0, 0, 0) - 7 * 3600 * 1000).toISOString();
+            }
+        }
+        query = query.gte('created_at', dateGteUtc);
     }
 
-    // Filter Rentang Tanggal
-    if (filters?.dateFrom) {
-        query = query.gte('created_at', `${filters.dateFrom}T00:00:00Z`);
-    }
     if (filters?.dateTo) {
-        query = query.lte('created_at', `${filters.dateTo}T23:59:59Z`);
+        let dateLteUtc = filters.dateTo;
+        if (!dateLteUtc.includes('T')) {
+            const [y, m, d] = filters.dateTo.split('-').map(Number);
+            if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+                dateLteUtc = new Date(Date.UTC(y, m - 1, d, 23, 59, 59, 999) - 7 * 3600 * 1000).toISOString();
+            }
+        }
+        query = query.lte('created_at', dateLteUtc);
     }
 
     const { data, error } = await query.order('created_at', { ascending: false });
@@ -63,20 +105,77 @@ export async function getCantineTransactionsAction(filters?: {
         return [];
     }
 
-    // Enrich with computed payment type (mengenali transaksi tunai baik via NULL student_id maupun akun sistem kas tunai)
-    return (data || []).map((tx: any) => {
+    // 3. Ambil data katalog kantin untuk pencocokan harga modal (HPP) dan estimasi laba
+    const { data: canteenItemsData } = await supabaseAdmin
+        .from('canteen_items')
+        .select('name, price, cost_price')
+        .in('user_id', userIds);
+
+    const catalogMap = new Map<string, { price: number; cost_price: number }>();
+    (canteenItemsData || []).forEach((item: any) => {
+        if (item.name) {
+            catalogMap.set(item.name.trim().toLowerCase(), {
+                price: Number(item.price || 0),
+                cost_price: Number(item.cost_price || 0)
+            });
+        }
+    });
+
+    // 4. Enrich & Klasifikasi Jenis Pembayaran serta Kalkulasi Modal & Keuntungan
+    let enriched = (data || []).map((tx: any) => {
         const isCashTransaction = !tx.student_id || 
             tx.students?.nis === 'CASH-UMUM' || 
             tx.students?.nis === 'UMUM' || 
             tx.students?.name?.toLowerCase().includes('pembeli umum') ||
             (tx.description && (tx.description.startsWith('Tunai') || tx.description.startsWith('Penjualan Tunai')));
 
+        // Analisis item dari deskripsi transaksi
+        let calculatedCost = 0;
+        let hasItemBreakdown = false;
+
+        if (tx.description && tx.description.includes(':')) {
+            const rawItemsPart = tx.description.split(':')[1]?.trim();
+            if (rawItemsPart) {
+                const itemSegments = rawItemsPart.split(',');
+                itemSegments.forEach((segment: string) => {
+                    const cleanSegment = segment.trim();
+                    const match = cleanSegment.match(/^(.*?)(?:\s*\(([0-9]+)x\))?$/);
+                    if (match) {
+                        const itemName = match[1]?.trim().toLowerCase();
+                        const qty = match[2] ? parseInt(match[2], 10) : 1;
+                        if (itemName && catalogMap.has(itemName)) {
+                            const catalogItem = catalogMap.get(itemName)!;
+                            calculatedCost += (catalogItem.cost_price * qty);
+                            hasItemBreakdown = true;
+                        }
+                    }
+                });
+            }
+        }
+
+        const estimatedCost = hasItemBreakdown ? calculatedCost : 0;
+        const estimatedProfit = Math.max(0, tx.amount - estimatedCost);
+        const profitMargin = tx.amount > 0 ? Math.round((estimatedProfit / tx.amount) * 100) : 0;
+
         return {
             ...tx,
             is_cash: isCashTransaction,
-            payment_method: isCashTransaction ? 'CASH' : 'TABUNGAN'
+            payment_method: isCashTransaction ? 'CASH' : 'TABUNGAN',
+            estimated_cost: estimatedCost,
+            estimated_profit: estimatedProfit,
+            profit_margin: profitMargin,
+            has_item_breakdown: hasItemBreakdown
         };
     });
+
+    // Filter Metode Pembayaran
+    if (filters?.paymentMethod === 'CASH') {
+        enriched = enriched.filter(tx => tx.is_cash);
+    } else if (filters?.paymentMethod === 'TABUNGAN') {
+        enriched = enriched.filter(tx => !tx.is_cash);
+    }
+
+    return enriched;
 }
 
 /**
@@ -154,6 +253,7 @@ export async function getStudentDataForPayment(nisInput: string, schoolCodeInput
 
 /**
  * Mengambil daftar menu/produk kantin milik outlet yang sedang login.
+ * Menghitung otomatis profit per porsi dan margin laba.
  */
 export async function getCanteenItemsAction() {
     const supabaseUser = createClient();
@@ -172,7 +272,20 @@ export async function getCanteenItemsAction() {
             console.error('[GET_CANTEEN_ITEMS_ERR]', error);
             return [];
         }
-        return data || [];
+        
+        return (data || []).map((item: any) => {
+            const price = Number(item.price || 0);
+            const cost_price = Number(item.cost_price ?? 0);
+            const profit = Math.max(0, price - cost_price);
+            const profit_margin = price > 0 ? Math.round((profit / price) * 100) : 0;
+            return {
+                ...item,
+                price,
+                cost_price,
+                profit,
+                profit_margin
+            };
+        });
     } catch (err) {
         console.error('[GET_CANTEEN_ITEMS_CATCH]', err);
         return [];
@@ -180,12 +293,14 @@ export async function getCanteenItemsAction() {
 }
 
 /**
- * Menambah produk menu baru di kantin.
+ * Menambah produk menu baru di kantin (dengan Harga Jual & Harga Modal).
+ * Dilengkapi self-healing fallback jika tabel belum memiliki kolom cost_price.
  */
 export async function addCanteenItemAction(params: {
     name: string;
     category: string;
     price: number;
+    cost_price?: number;
     stock: number;
     image_url?: string;
 }) {
@@ -195,17 +310,28 @@ export async function addCanteenItemAction(params: {
 
     const supabaseAdmin = getSupabaseAdmin();
     try {
-        const { error } = await supabaseAdmin
+        const payload: any = {
+            user_id: user.id,
+            name: params.name.trim(),
+            category: params.category || 'Makanan',
+            price: Number(params.price || 0),
+            cost_price: Math.max(0, Number(params.cost_price || 0)),
+            stock: Number(params.stock || 0),
+            image_url: params.image_url || null,
+            is_available: params.stock > 0
+        };
+
+        let { error } = await supabaseAdmin
             .from('canteen_items')
-            .insert({
-                user_id: user.id,
-                name: params.name.trim(),
-                category: params.category || 'Makanan',
-                price: params.price,
-                stock: params.stock,
-                image_url: params.image_url || null,
-                is_available: params.stock > 0
-            });
+            .insert(payload);
+
+        // Self-Healing Fallback: Jika database Supabase belum menambahkan kolom cost_price
+        if (error && (error.message?.includes('cost_price') || error.code === '42703')) {
+            console.warn('[canteen_items] Kolom cost_price belum ada di DB Supabase, insert tanpa cost_price...');
+            delete payload.cost_price;
+            const retry = await supabaseAdmin.from('canteen_items').insert(payload);
+            error = retry.error;
+        }
 
         if (error) throw error;
         revalidatePath('/cantine/menu');
@@ -217,12 +343,14 @@ export async function addCanteenItemAction(params: {
 }
 
 /**
- * Mengubah data / stok menu kantin.
+ * Mengubah data / stok menu kantin (termasuk Harga Jual & Harga Modal).
+ * Dilengkapi self-healing fallback jika kolom cost_price belum ada.
  */
 export async function updateCanteenItemAction(id: string, params: {
     name?: string;
     category?: string;
     price?: number;
+    cost_price?: number;
     stock?: number;
     is_available?: boolean;
 }) {
@@ -233,15 +361,33 @@ export async function updateCanteenItemAction(id: string, params: {
     const supabaseAdmin = getSupabaseAdmin();
     try {
         const payload: any = { ...params, updated_at: new Date().toISOString() };
+        if (typeof params.cost_price === 'number') {
+            payload.cost_price = Math.max(0, Number(params.cost_price));
+        }
+        if (typeof params.price === 'number') {
+            payload.price = Number(params.price);
+        }
         if (typeof params.stock === 'number') {
             payload.is_available = params.stock > 0;
         }
 
-        const { error } = await supabaseAdmin
+        let { error } = await supabaseAdmin
             .from('canteen_items')
             .update(payload)
             .eq('id', id)
             .eq('user_id', user.id);
+
+        // Self-Healing Fallback: Jika database Supabase belum ada kolom cost_price
+        if (error && (error.message?.includes('cost_price') || error.code === '42703')) {
+            console.warn('[canteen_items] Kolom cost_price belum ada di DB Supabase, update tanpa cost_price...');
+            delete payload.cost_price;
+            const retry = await supabaseAdmin
+                .from('canteen_items')
+                .update(payload)
+                .eq('id', id)
+                .eq('user_id', user.id);
+            error = retry.error;
+        }
 
         if (error) throw error;
         revalidatePath('/cantine/menu');
@@ -480,6 +626,8 @@ export async function processCantinePayment(params: {
         revalidatePath('/home');
         revalidatePath(`/profiles/${studentId}`);
         revalidatePath('/cantine/menu');
+        revalidatePath('/cantine/history');
+        revalidatePath('/cantine/payment');
 
         return { success: true, message: 'Pembayaran Berhasil.' };
     } catch (err: any) {
@@ -696,20 +844,50 @@ export async function getCanteenDailySummaryAction() {
 
     const supabaseAdmin = getSupabaseAdmin();
     try {
-        const todayStart = new Date();
-        todayStart.setHours(0,0,0,0);
+        const now = new Date();
+        const wibNow = new Date(now.getTime() + 7 * 3600 * 1000);
+        const wibYear = wibNow.getUTCFullYear();
+        const wibMonth = wibNow.getUTCMonth();
+        const wibDate = wibNow.getUTCDate();
+        const todayStartWIBInUTC = new Date(Date.UTC(wibYear, wibMonth, wibDate, 0, 0, 0, 0) - 7 * 3600 * 1000).toISOString();
 
-        // Fetch transactions today & items in parallel
+        const { data: userProfile } = await supabaseAdmin
+            .from('profiles')
+            .select('id, role, school_code')
+            .eq('id', user.id)
+            .maybeSingle();
+
+        let userIds = [user.id];
+        if (userProfile?.school_code) {
+            const { data: schoolProfiles } = await supabaseAdmin
+                .from('profiles')
+                .select('id')
+                .eq('school_code', userProfile.school_code)
+                .in('role', ['CANTINE', 'ADMIN', 'GURU', 'TEACHER']);
+
+            if (schoolProfiles && schoolProfiles.length > 0) {
+                userIds = Array.from(new Set([user.id, ...schoolProfiles.map(p => p.id)]));
+            }
+        }
+
+        let txQuery = supabaseAdmin
+            .from('transactions')
+            .select('amount, description, created_at, student_id, is_settled')
+            .or('category.eq.BELANJA_KANTIN,category.eq.KANTIN,description.ilike.Tunai%,description.ilike.Penjualan Tunai%')
+            .gte('created_at', todayStartWIBInUTC);
+
+        if (userIds.length > 1) {
+            txQuery = txQuery.in('user_id', userIds);
+        } else {
+            txQuery = txQuery.eq('user_id', user.id);
+        }
+
+        // Fetch transactions today & items in parallel (termasuk name, price, cost_price untuk analisis laba)
         const [txsRes, itemsRes] = await Promise.all([
-            supabaseAdmin
-                .from('transactions')
-                .select('amount, description, created_at, student_id, is_settled')
-                .eq('user_id', user.id)
-                .eq('category', 'BELANJA_KANTIN')
-                .gte('created_at', todayStart.toISOString()),
+            txQuery,
             supabaseAdmin
                 .from('canteen_items')
-                .select('id, stock')
+                .select('id, name, price, cost_price, stock')
                 .eq('user_id', user.id)
         ]);
 
@@ -719,38 +897,73 @@ export async function getCanteenDailySummaryAction() {
         const lowStockCount = items.filter(i => i.stock > 0 && i.stock <= 5).length;
         const outOfStockCount = items.filter(i => i.stock === 0).length;
 
+        const catalogMap = new Map<string, { price: number; cost_price: number }>();
+        items.forEach((item: any) => {
+            if (item.name) {
+                catalogMap.set(item.name.trim().toLowerCase(), {
+                    price: Number(item.price || 0),
+                    cost_price: Number(item.cost_price || 0)
+                });
+            }
+        });
+
+        // Hitung estimasi nilai stok & modal gudang kantin
+        const totalStockValue = items.reduce((sum, i) => sum + (Number(i.price || 0) * Number(i.stock || 0)), 0);
+        const totalStockCost = items.reduce((sum, i) => sum + (Number(i.cost_price || 0) * Number(i.stock || 0)), 0);
+        const potentialStockProfit = Math.max(0, totalStockValue - totalStockCost);
+
         if (txs.length === 0) {
             return { 
                 todayRevenue: 0, 
                 todayCashRevenue: 0, 
                 todayTabunganRevenue: 0, 
                 todayUnsettled: 0,
+                todayEstimatedCost: 0,
+                todayEstimatedProfit: 0,
+                todayProfitMargin: 0,
                 todayCount: 0, 
                 topItem: '-',
                 lowStockCount,
-                outOfStockCount
+                outOfStockCount,
+                totalStockValue,
+                totalStockCost,
+                potentialStockProfit
             };
         }
 
         const todayRevenue = txs.reduce((sum, tx) => sum + tx.amount, 0);
-        const todayCashRevenue = txs.filter(tx => !tx.student_id).reduce((sum, tx) => sum + tx.amount, 0);
-        const todayTabunganRevenue = txs.filter(tx => Boolean(tx.student_id)).reduce((sum, tx) => sum + tx.amount, 0);
-        const todayUnsettled = txs.filter(tx => !tx.is_settled).reduce((sum, tx) => sum + tx.amount, 0);
+        const todayCashRevenue = txs.filter(tx => !tx.student_id || (tx.description && (tx.description.startsWith('Tunai') || tx.description.startsWith('Penjualan Tunai')))).reduce((sum, tx) => sum + tx.amount, 0);
+        const todayTabunganRevenue = txs.filter(tx => Boolean(tx.student_id) && !(tx.description && (tx.description.startsWith('Tunai') || tx.description.startsWith('Penjualan Tunai')))).reduce((sum, tx) => sum + tx.amount, 0);
+        const todayUnsettled = txs.filter(tx => !tx.is_settled && Boolean(tx.student_id) && !(tx.description && (tx.description.startsWith('Tunai') || tx.description.startsWith('Penjualan Tunai')))).reduce((sum, tx) => sum + tx.amount, 0);
         const todayCount = txs.length;
 
-        // Analisis item paling sering muncul dari deskripsi transaksi
+        // Hitung modal & keuntungan harian berdasarkan penjualan item
+        let todayEstimatedCost = 0;
         const itemFrequency: Record<string, number> = {};
+
         txs.forEach(tx => {
             if (tx.description?.includes(':')) {
                 const parts = tx.description.split(':')[1]?.split(',');
                 parts?.forEach(p => {
-                    const cleanName = p.trim().split('(')[0]?.trim();
-                    if (cleanName) {
-                        itemFrequency[cleanName] = (itemFrequency[cleanName] || 0) + 1;
+                    const clean = p.trim();
+                    const match = clean.match(/^(.*?)(?:\s*\(([0-9]+)x\))?$/);
+                    if (match) {
+                        const cleanName = match[1]?.trim().toLowerCase();
+                        const qty = match[2] ? parseInt(match[2], 10) : 1;
+                        if (cleanName) {
+                            itemFrequency[cleanName] = (itemFrequency[cleanName] || 0) + qty;
+                            if (catalogMap.has(cleanName)) {
+                                const itemInfo = catalogMap.get(cleanName)!;
+                                todayEstimatedCost += (itemInfo.cost_price * qty);
+                            }
+                        }
                     }
                 });
             }
         });
+
+        const todayEstimatedProfit = Math.max(0, todayRevenue - todayEstimatedCost);
+        const todayProfitMargin = todayRevenue > 0 ? Math.round((todayEstimatedProfit / todayRevenue) * 100) : 0;
 
         let topItem = '-';
         let maxCount = 0;
@@ -766,10 +979,16 @@ export async function getCanteenDailySummaryAction() {
             todayCashRevenue, 
             todayTabunganRevenue, 
             todayUnsettled,
+            todayEstimatedCost,
+            todayEstimatedProfit,
+            todayProfitMargin,
             todayCount, 
             topItem,
             lowStockCount,
-            outOfStockCount
+            outOfStockCount,
+            totalStockValue,
+            totalStockCost,
+            potentialStockProfit
         };
     } catch (err) {
         console.error('[GET_CANTEEN_DAILY_SUMMARY_ERR]', err);
@@ -778,10 +997,16 @@ export async function getCanteenDailySummaryAction() {
             todayCashRevenue: 0, 
             todayTabunganRevenue: 0, 
             todayUnsettled: 0,
+            todayEstimatedCost: 0,
+            todayEstimatedProfit: 0,
+            todayProfitMargin: 0,
             todayCount: 0, 
             topItem: '-',
             lowStockCount: 0,
-            outOfStockCount: 0
+            outOfStockCount: 0,
+            totalStockValue: 0,
+            totalStockCost: 0,
+            potentialStockProfit: 0
         };
     }
 }

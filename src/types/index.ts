@@ -83,3 +83,17 @@ export interface Profile {
   custom_quota?: number | null;
   admin_fee?: number | null;
 }
+
+export interface CanteenItem {
+  id: string;
+  name: string;
+  category: string;
+  price: number; // Harga Jual
+  cost_price?: number; // Harga Modal (Asli)
+  stock: number;
+  image_url?: string | null;
+  is_available: boolean;
+  user_id?: string;
+  created_at?: string;
+  updated_at?: string;
+}

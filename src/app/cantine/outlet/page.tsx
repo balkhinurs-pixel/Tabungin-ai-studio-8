@@ -216,8 +216,13 @@ export default function CantineOutletPage() {
                       return (
                           <div key={tx.id} className="flex items-center justify-between p-4 rounded-3xl bg-white border border-gray-200 shadow-sm transition-all hover:border-gray-400">
                               <div className="flex items-center gap-3">
-                                  <div className="h-10 w-10 rounded-2xl bg-gray-100 flex items-center justify-center border border-gray-300">
-                                      {isCash ? <Banknote className="h-5 w-5 text-black" /> : <Wallet className="h-5 w-5 text-black" />}
+                                  <div className={cn(
+                                      "h-10 w-10 rounded-2xl flex items-center justify-center border",
+                                      isCash 
+                                        ? "bg-emerald-100 border-emerald-300 text-emerald-700" 
+                                        : "bg-blue-100 border-blue-300 text-blue-700"
+                                  )}>
+                                      {isCash ? <Banknote className="h-5 w-5 text-emerald-700" /> : <Wallet className="h-5 w-5 text-blue-700" />}
                                   </div>
                                   <div className="flex flex-col">
                                       <div className="flex items-center gap-2">
@@ -225,8 +230,10 @@ export default function CantineOutletPage() {
                                               {customerName}
                                           </p>
                                           <span className={cn(
-                                            "text-[7px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-full border",
-                                            isCash ? "bg-black text-white border-black" : "bg-gray-100 text-gray-800 border-gray-300"
+                                            "text-[7px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border shadow-2xs",
+                                            isCash 
+                                              ? "bg-emerald-100 text-emerald-800 border-emerald-300" 
+                                              : "bg-blue-100 text-blue-800 border-blue-300"
                                           )}>
                                             {isCash ? 'CASH' : 'ATM'}
                                           </span>
