@@ -248,12 +248,13 @@ export async function resetStudentPinAction(
   const supabaseAdmin = getSupabaseAdmin();
 
   try {
-    // 4. Coba perbarui password dan email auth user yang ada
+    // 4. Coba perbarui password, email, dan user_metadata auth user yang ada
     const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
       studentId,
       {
         password: pinToSet,
         email: shadowEmail,
+        user_metadata: { pin: pinToSet },
         email_confirm: true
       }
     );
@@ -265,6 +266,7 @@ export async function resetStudentPinAction(
           id: studentId,
           email: shadowEmail,
           password: pinToSet,
+          user_metadata: { pin: pinToSet },
           email_confirm: true
         });
 
@@ -276,15 +278,29 @@ export async function resetStudentPinAction(
       }
     }
 
-    // 6. Sinkronkan nilai PIN (dan nomor WA jika disertakan) ke tabel students
-    const updatePayload: Record<string, any> = { pin: pinToSet };
-    if (whatsappNumber !== undefined) {
-      updatePayload.whatsapp_number = whatsappNumber.trim();
+    // 6. Sinkronkan nilai PIN (dan nomor WA jika disertakan) ke tabel students secara aman
+    try {
+      const updatePayload: Record<string, any> = { pin: pinToSet };
+      if (whatsappNumber !== undefined) {
+        updatePayload.whatsapp_number = whatsappNumber.trim();
+      }
+      const { error: updateTableErr } = await supabase
+        .from('students')
+        .update(updatePayload)
+        .eq('id', studentId);
+
+      // Jika kolom pin belum dibuat di database, tetap perbarui nomor whatsapp jika ada
+      if (updateTableErr && (updateTableErr.message?.includes("'pin' column") || updateTableErr.code === 'PGRST204')) {
+        if (whatsappNumber !== undefined) {
+          await supabase
+            .from('students')
+            .update({ whatsapp_number: whatsappNumber.trim() })
+            .eq('id', studentId);
+        }
+      }
+    } catch (dbErr) {
+      console.warn('[RESET_PIN_TABLE_SYNC_WARN]', dbErr);
     }
-    await supabase
-      .from('students')
-      .update(updatePayload)
-      .eq('id', studentId);
 
     revalidatePath('/profiles');
     revalidatePath(`/profiles/${studentId}`);
@@ -356,27 +372,54 @@ export async function updateStudentAction(
         return { success: false, message: 'PIN harus terdiri dari tepat 6 digit angka.' };
     }
 
-    // 1. Update the public student profile (termasuk kolom pin)
-    const updatePayload: Record<string, any> = {
+    // 1. Update the public student profile (dengan proteksi graceful jika kolom pin belum dibuat di database)
+    const basePayload: Record<string, any> = {
         nis,
         name,
         class: studentClass,
         whatsapp_number,
         daily_limit
     };
-    if (pin) {
-        updatePayload.pin = pin;
-    }
     if (avatar_url !== null) {
-        updatePayload.avatar_url = avatar_url.trim() || null;
+        basePayload.avatar_url = avatar_url.trim() || null;
     }
 
-    const { data: updatedStudentData, error: updateStudentError } = await supabase
-        .from('students')
-        .update(updatePayload)
-        .eq('id', id)
-        .select()
-        .single();
+    let updatedStudentData: any = null;
+    let updateStudentError: any = null;
+
+    if (pin) {
+        const payloadWithPin = { ...basePayload, pin };
+        const res = await supabase
+            .from('students')
+            .update(payloadWithPin)
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (res.error && (res.error.message?.includes("'pin' column") || res.error.code === 'PGRST204')) {
+            // Kolom pin belum ada di database Supabase, update tanpa kolom pin agar data siswa tetap tersimpan
+            const retryRes = await supabase
+                .from('students')
+                .update(basePayload)
+                .eq('id', id)
+                .select()
+                .single();
+            updatedStudentData = retryRes.data;
+            updateStudentError = retryRes.error;
+        } else {
+            updatedStudentData = res.data;
+            updateStudentError = res.error;
+        }
+    } else {
+        const res = await supabase
+            .from('students')
+            .update(basePayload)
+            .eq('id', id)
+            .select()
+            .single();
+        updatedStudentData = res.data;
+        updateStudentError = res.error;
+    }
 
     if (updateStudentError) {
         const errorMessage = updateStudentError.code === '23505' 
@@ -398,13 +441,14 @@ export async function updateStudentAction(
             const shadowEmail = `${nis}@${profile.school_code.toLowerCase().trim()}.supabase.user`;
             const supabaseAdmin = getSupabaseAdmin();
             
-            const authUpdatePayload: { email: string; email_confirm: boolean; password?: string } = {
+            const authUpdatePayload: { email: string; email_confirm: boolean; password?: string; user_metadata?: Record<string, any> } = {
                 email: shadowEmail,
                 email_confirm: true,
             };
 
             if (pin && pin.length === 6) {
                 authUpdatePayload.password = pin;
+                authUpdatePayload.user_metadata = { pin };
             }
 
             const { error: updateUserError } = await supabaseAdmin.auth.admin.updateUserById(
@@ -419,6 +463,7 @@ export async function updateStudentAction(
                         id: id,
                         email: shadowEmail,
                         password: pin && pin.length === 6 ? pin : '123456',
+                        user_metadata: { pin: pin && pin.length === 6 ? pin : '123456' },
                         email_confirm: true
                     });
                 } else if (pin && pin.length === 6) {
@@ -432,10 +477,11 @@ export async function updateStudentAction(
     revalidatePath('/profiles');
     revalidatePath(`/profiles/${id}`);
     revalidatePath('/home');
+    const finalPin = pin || updatedStudentData?.pin || '123456';
     return {
         success: true,
         message: `Data siswa ${name} berhasil diperbarui.`,
-        student: { ...updatedStudentData, transactions: [] }
+        student: { ...updatedStudentData, pin: finalPin, transactions: [] }
     };
 }
 

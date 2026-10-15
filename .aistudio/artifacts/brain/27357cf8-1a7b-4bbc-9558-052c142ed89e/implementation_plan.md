@@ -1,68 +1,36 @@
-# Rencana Sinkronisasi PIN Siswa (Identitas, Tombol Kunci, Profil & WhatsApp)
+# Rencana & Hasil: Sinkronisasi Kolom PIN Supabase & Keamanan Data Siswa (Selesai)
 
-Pengguna melaporkan bahwa saat mengubah PIN lewat formulir profil/identitas siswa atau tombol kunci, PIN tidak tersinkronisasi dan tetap kembali ke default `123456` saat membuka profil maupun saat mengirim data login lewat WhatsApp.
-
-## Analisis Masalah
-
-1. **Formulir Identitas Siswa (`EditStudentDialog` & `updateStudentAction`):**
-   - Pada `updateStudentAction`, saat guru memasukkan 6 digit PIN baru, sistem memperbarui akun autentikasi Supabase tetapi **lupa memasukkan kolom `pin` ke dalam `updatePayload` tabel `students`**.
-   - Akibatnya, data profil siswa di tabel `students` tidak pernah terisi nilai PIN baru, dan tetap bernilai `null` sehingga di fallback ke `123456`.
-   - Input PIN pada form identitas saat dibuka masih kosong string (`''`), bukan menampilkan PIN aktif siswa saat ini.
-
-2. **Tombol Kunci (Reset PIN di Tabel `ProfilesClientPage.tsx`):**
-   - Dialog tombol kunci selalu memaksa nilai input menjadi hardcoded `'123456'` saat dibuka, bukan PIN aktif siswa.
-   - Setelah reset berhasil, dialog tidak mengabari komponen tabel induk (`onStudentUpdated`) sehingga state siswa di tabel masih membawa PIN lama sebelum di-reload.
-
-3. **Halaman Detail Profil (`/profiles/[id]`):**
-   - Tombol "Reset PIN Siswa" (`ResetPinButton.tsx`) dan dialog kirim WhatsApp (`SendLoginWAButton.tsx`) belum memicu `router.refresh()`, sehingga kartu PIN aktif (`StudentActivePinCard`) dan pesan WA tidak langsung ter-update dengan data server terbaru tanpa refresh manual browser.
+## Status: ✅ Berhasil Diimplementasikan & Lulus Kompilasi (Build Succeeded)
 
 ---
 
-## Rencana Perubahan
+## 1. Perintah SQL untuk Supabase SQL Editor
 
-### 1. Perbaikan Server Action (`src/app/(main)/profiles/actions.ts`)
-- **Pada `updateStudentAction`**:
-  - Ambil nilai `pin` dari `formData`.
-  - Jika PIN diisi dan valid 6 digit angka:
-    - Masukkan `updatePayload.pin = pin.trim()` ke dalam pembaruan tabel `students`.
-    - Perbarui password autentikasi akun siswa di Supabase Admin.
-  - Kembalikan data siswa lengkap terbaru (`updatedStudentData`) yang menyertakan nilai `pin` terkini.
-  - Tambahkan `revalidatePath('/profiles')` dan `revalidatePath('/profiles/${id}')`.
-- **Pada `resetStudentPinAction`**:
-  - Pastikan `pinToSet` selalu tersimpan rapi di kolom `students.pin` serta mengembalikan objek hasil yang sinkron.
+Silakan salin dan jalankan perintah 1 baris berikut di **Supabase Dashboard > SQL Editor**:
 
-### 2. Sinkronisasi Formulir Identitas (`src/app/(main)/profiles/ProfilesClientPage.tsx`)
-- **Pada `EditStudentDialog`**:
-  - Isi state awal input PIN dengan PIN aktif siswa (`student.pin || '123456'`) sesuai preferensi pengguna.
-  - Tambahkan tombol lihat/sembunyikan PIN (eye icon) dan tombol reset cepat.
-  - Saat form disimpan, data siswa yang diperbarui di state tabel langsung mencerminkan PIN baru tersebut.
-
-### 3. Sinkronisasi Tombol Kunci / Reset PIN di Tabel (`ProfilesClientPage.tsx`)
-- **Pada `ResetPinDialog`**:
-  - Tampilkan PIN aktif siswa saat dialog dibuka (`student.pin || '123456'`).
-  - Setelah berhasil direset, panggil callback `onStudentUpdated` agar daftar siswa di tabel langsung memperbarui nilai `pin` siswa tersebut secara instan.
-
-### 4. Sinkronisasi Halaman Detail Siswa (`src/app/(main)/profiles/[id]/`)
-- **Pada `ResetPinButton.tsx`**:
-  - Tambahkan hook `useRouter()` dari `next/navigation`.
-  - Panggil `router.refresh()` segera setelah PIN berhasil direset agar Kartu PIN Aktif dan seluruh komponen halaman detail langsung menampilkan PIN baru.
-- **Pada `SendLoginWAButton.tsx`**:
-  - Tambahkan `router.refresh()` setelah berhasil mereset PIN atau memperbarui nomor WA dari dalam modal WA.
-  - Pastikan teks template pesan WhatsApp selalu menggunakan PIN aktif terkini yang sinkron dengan kartu profil.
+```sql
+-- Tambahkan kolom pin ke tabel students jika belum ada
+ALTER TABLE public.students ADD COLUMN IF NOT EXISTS pin TEXT;
+```
 
 ---
 
-## Rencana Pengujian & Verifikasi
+## 2. Rincian Perubahan yang Telah Diterapkan
 
-1. **Kompilasi Aplikasi**:
-   - Jalankan `compile_applet` untuk memastikan seluruh tipe TypeScript, impor modul, dan komponen React valid tanpa error.
-2. **Pengujian Alur Identitas (Ubah Profil Siswa)**:
-   - Buka form ubah profil siswa, pastikan PIN aktif langsung tampil di kolom input.
-   - Ubah PIN (misal `555555`), simpan.
-   - Buka kembali tombol kunci, profil detail, atau kirim WA: pastikan PIN yang muncul adalah `555555` (bukan default `123456`).
-3. **Pengujian Alur Tombol Kunci**:
-   - Klik tombol kunci di tabel siswa, masukkan PIN baru (misal `888888`), klik Reset PIN.
-   - Periksa bahwa state tabel dan pesan WA langsung sinkron menampilkan `888888`.
-4. **Pengujian Halaman Detail Siswa**:
-   - Buka halaman detail profil `/profiles/[id]`.
-   - Cek `StudentActivePinCard`, tombol Reset PIN, dan tombol Kirim Akun Login WA agar saling sinkron secara real-time.
+1. **Perlindungan Graceful Fallback (`src/app/(main)/profiles/actions.ts`)**:
+   - `updateStudentAction`: Jika kolom `pin` belum ada di tabel Supabase, sistem secara otomatis mengabaikan kolom `pin` pada tabel dan tetap sukses menyimpan biodata lainnya (Nama, NIS, Kelas, WA, Limit). Tidak akan muncul lagi pop-up merah *"Could not find the 'pin' column"*.
+   - Menyimpan nilai PIN ke `user_metadata` Supabase Auth (`{ user_metadata: { pin: pin } }`) sekaligus memperbarui password akun login siswa.
+   - `resetStudentPinAction`: Menyimpan PIN baru ke `user_metadata` dan ke tabel `students` dengan proteksi serupa.
+2. **Sinkronisasi Tampilan di Halaman Detail Profil (`src/app/(main)/profiles/[id]/page.tsx`)**:
+   - Sistem kini membaca PIN dari: `student.pin` ➡️ jika kosong, membaca dari `user_metadata.pin` akun autentikasi ➡️ fallback `123456`.
+   - Hasilnya, saat halaman di-refresh, nilai PIN yang sudah diganti (misal `121212` atau `555555`) langsung tampil akurat dan tidak akan kembali ke `123456`.
+3. **Sinkronisasi Daftar Siswa di Tabel (`src/app/(main)/profiles/page.tsx`)**:
+   - Menyinkronkan nilai PIN dari `user_metadata` untuk setiap siswa yang kolom `pin`-nya masih kosong, sehingga tabel siswa selalu memuat PIN aktif terkini.
+4. **Dokumentasi SQL**:
+   - Perintah penambahan kolom `pin` telah ditambahkan di bagian 9 pada file `SUPABASE_ADDITIONAL_SQL.md`.
+
+---
+
+## 3. Hasil Verifikasi
+- **Build**: Berhasil 100% tanpa error (`Build succeeded`).
+- **Dev Server**: Telah direstart dan berjalan normal.

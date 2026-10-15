@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import type { Student } from '@/types';
 import { createClient } from '@/lib/utils/supabase/server';
+import { getSupabaseAdmin } from '@/lib/supabase-admin';
 import PrintReportButton from './_components/PrintReportButton';
 import SendWAButton from './_components/SendWAButton';
 import SendLoginWAButton from './_components/SendLoginWAButton';
@@ -85,6 +86,19 @@ export default async function StudentProfilePage({ params }: StudentProfilePageP
   const student = studentData as Student;
   // Urutkan transaksi terbaru di atas
   student.transactions = (student.transactions || []).sort((a,b) => new Date(b.created_at!).getTime() - new Date(a.created_at!).getTime());
+
+  // Pastikan PIN siswa tersinkronkan: jika kolom pin di tabel database masih kosong atau belum dibuat, baca dari user_metadata akun auth siswa
+  if (!student.pin) {
+    try {
+      const supabaseAdmin = getSupabaseAdmin();
+      const { data: authUserData } = await supabaseAdmin.auth.admin.getUserById(studentId);
+      if (authUserData?.user?.user_metadata?.pin) {
+        student.pin = String(authUserData.user.user_metadata.pin);
+      }
+    } catch (authPinErr) {
+      console.warn('[STUDENT_AUTH_PIN_FETCH_WARN]', authPinErr);
+    }
+  }
 
   // Ambil school_code guru atau dari profil pengelola siswa
   const { data: { user } } = await supabase.auth.getUser();

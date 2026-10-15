@@ -204,4 +204,11 @@ DROP POLICY IF EXISTS "Authenticated users can delete student photos" ON storage
 CREATE POLICY "Authenticated users can delete student photos"
 ON storage.objects FOR DELETE TO authenticated
 USING ( bucket_id = 'student-photos' );
+
+-- ==========================================================
+-- 9. SINKRONISASI KOLOM PIN SISWA
+-- Menambahkan kolom pin agar PIN login siswa tersimpan langsung di tabel students
+-- ==========================================================
+ALTER TABLE public.students 
+ADD COLUMN IF NOT EXISTS pin TEXT;
 ```
