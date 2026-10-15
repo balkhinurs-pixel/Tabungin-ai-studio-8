@@ -200,7 +200,8 @@ export async function addStudentAction(
 
 export async function resetStudentPinAction(
   studentId: string,
-  customPin?: string
+  customPin?: string,
+  whatsappNumber?: string
 ): Promise<{ success: boolean; message: string; pin?: string }> {
   if (!studentId) {
     return { success: false, message: 'ID Siswa tidak valid.' };
@@ -272,6 +273,12 @@ export async function resetStudentPinAction(
       } else {
         return { success: false, message: `Gagal mereset PIN: ${updateError.message}` };
       }
+    }
+
+    // 6. Jika ada perubahan nomor WhatsApp, update juga tabel students
+    if (whatsappNumber !== undefined) {
+      const cleanPhone = whatsappNumber.trim() ? whatsappNumber.trim() : null;
+      await supabase.from('students').update({ whatsapp_number: cleanPhone }).eq('id', studentId);
     }
 
     revalidatePath('/profiles');

@@ -7,6 +7,7 @@ import type { Student } from '@/types';
 import { createClient } from '@/lib/utils/supabase/server';
 import PrintReportButton from './_components/PrintReportButton';
 import SendWAButton from './_components/SendWAButton';
+import SendLoginWAButton from './_components/SendLoginWAButton';
 import ResetPinButton from './_components/ResetPinButton';
 import TransactionList from './_components/TransactionList';
 import { cn } from '@/lib/utils';
@@ -83,6 +84,19 @@ export default async function StudentProfilePage({ params }: StudentProfilePageP
   const student = studentData as Student;
   // Urutkan transaksi terbaru di atas
   student.transactions = (student.transactions || []).sort((a,b) => new Date(b.created_at!).getTime() - new Date(a.created_at!).getTime());
+
+  // Ambil school_code guru atau dari profil pengelola siswa
+  const { data: { user } } = await supabase.auth.getUser();
+  let schoolCode = '';
+  const profileUserId = user?.id || student.user_id;
+  if (profileUserId) {
+    const { data: profileData } = await supabase
+      .from('profiles')
+      .select('school_code')
+      .eq('id', profileUserId)
+      .maybeSingle();
+    schoolCode = profileData?.school_code || '';
+  }
 
   const { income, expense, balance } = (student?.transactions || []).reduce(
     (acc, tx) => {
@@ -208,8 +222,9 @@ export default async function StudentProfilePage({ params }: StudentProfilePageP
             <div className="h-px flex-1 bg-gray-100" />
         </div>
         <div className="grid grid-cols-1 gap-3">
-            <PrintReportButton student={student} />
+            <SendLoginWAButton student={student} schoolCode={schoolCode} />
             <SendWAButton student={student} income={income} expense={expense} balance={balance} />
+            <PrintReportButton student={student} />
             <ResetPinButton student={student} />
         </div>
       </div>

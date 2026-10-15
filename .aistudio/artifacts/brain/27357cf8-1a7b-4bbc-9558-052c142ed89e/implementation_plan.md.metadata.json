@@ -1,6 +1,6 @@
 {
-  "summary": "Rencana implementasi fitur pemantauan saldo siswa untuk Admin Pusat di panel admin, mencakup menu navigasi Saldo Siswa, filter sekolah, pencarian real-time, ringkasan metrik total saldo, serta tabel informasi NIS, nama, kelas, sekolah, dan nominal saldo.",
-  "updatedAt": "2026-10-14T23:02:05.361665903Z",
+  "summary": "Rencana implementasi tombol dan dialog Kirim Akun Login Siswa (Nama, User/NIS, PIN, dan Alamat Login Siswa) ke WhatsApp Wali melalui Web Redirect WhatsApp pada halaman detail profil siswa.",
+  "updatedAt": "2026-10-15T08:31:26.428097855Z",
   "requestFeedback": true,
   "userFacing": true
 }
