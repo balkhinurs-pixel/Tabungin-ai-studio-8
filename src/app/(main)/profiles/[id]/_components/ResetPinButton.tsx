@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { KeyRound, RotateCcw, Check, Copy, MessageSquare, Loader2, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -24,9 +25,10 @@ interface ResetPinButtonProps {
 }
 
 export default function ResetPinButton({ student }: ResetPinButtonProps) {
+  const router = useRouter();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
-  const [pin, setPin] = useState('123456');
+  const [pin, setPin] = useState(student.pin || '123456');
   const [loading, setLoading] = useState(false);
   const [newPinResult, setNewPinResult] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -53,6 +55,7 @@ export default function ResetPinButton({ student }: ResetPinButtonProps) {
       const res = await resetStudentPinAction(student.id, targetPin);
       if (res.success) {
         setNewPinResult(res.pin || targetPin);
+        router.refresh();
         toast({
           title: 'PIN Berhasil Direset',
           description: res.message,
@@ -106,7 +109,7 @@ _Pesan otomatis dari Sistem Tabungan Digital Sekolah._`;
   const handleDialogOpenChange = (isOpen: boolean) => {
     setOpen(isOpen);
     if (isOpen) {
-      setPin('123456');
+      setPin(student.pin || '123456');
       setNewPinResult(null);
       setCopied(false);
     }
@@ -170,9 +173,14 @@ _Pesan otomatis dari Sistem Tabungan Digital Sekolah._`;
           <div className="space-y-4 py-3">
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label htmlFor="custom-pin" className="text-xs font-bold text-foreground">
-                  PIN Baru (6 Digit Angka)
-                </Label>
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="custom-pin" className="text-xs font-bold text-foreground">
+                    PIN Baru (6 Digit Angka)
+                  </Label>
+                  <span className="text-[10px] font-semibold bg-purple-100 text-purple-800 px-1.5 py-0.5 rounded">
+                    PIN Aktif: {student.pin || '123456'}
+                  </span>
+                </div>
                 <Button
                   type="button"
                   variant="link"
@@ -186,7 +194,7 @@ _Pesan otomatis dari Sistem Tabungan Digital Sekolah._`;
                 id="custom-pin"
                 value={pin}
                 onChange={handlePinChange}
-                placeholder="6 digit angka (contoh: 123456)"
+                placeholder={student.pin || '123456'}
                 maxLength={6}
                 inputMode="numeric"
                 className="font-mono text-base tracking-widest text-center h-12"

@@ -1,65 +1,68 @@
-# Rencana Implementasi: Tampilkan PIN Aktif Siswa & Kirim Akun via WA Tanpa Reset
+# Rencana Sinkronisasi PIN Siswa (Identitas, Tombol Kunci, Profil & WhatsApp)
 
-Berdasarkan kebutuhan Anda:
-1. Siswa yang mengganti PIN (misal `555555`) dapat dilihat PIN aktifnya oleh Guru/Admin tanpa harus mereset PIN.
-2. Pengiriman pesan WhatsApp akun login siswa secara otomatis menggunakan PIN aktif saat ini tanpa mereset PIN.
-3. Tetap tersedia opsi opsional jika sewaktu-waktu guru memang berniat mereset PIN siswa.
+Pengguna melaporkan bahwa saat mengubah PIN lewat formulir profil/identitas siswa atau tombol kunci, PIN tidak tersinkronisasi dan tetap kembali ke default `123456` saat membuka profil maupun saat mengirim data login lewat WhatsApp.
 
----
+## Analisis Masalah
 
-## 1. Analisis Masalah & Kebutuhan
-- **Kondisi Sebelumnya:**
-  - Saat siswa mengganti PIN di `/home` (`changeStudentPinAction`), sistem hanya memperbarui kata sandi di Supabase Auth (yang di-*hash* satu arah), sehingga nilai teks PIN tidak tersimpan di tabel `students`.
-  - Tombol WhatsApp (`SendLoginWAButton`) sebelumnya memaksakan reset PIN ke `123456` setiap kali pesan dikirim.
-  - Kartu profil siswa belum menampilkan PIN aktif siswa secara langsung.
+1. **Formulir Identitas Siswa (`EditStudentDialog` & `updateStudentAction`):**
+   - Pada `updateStudentAction`, saat guru memasukkan 6 digit PIN baru, sistem memperbarui akun autentikasi Supabase tetapi **lupa memasukkan kolom `pin` ke dalam `updatePayload` tabel `students`**.
+   - Akibatnya, data profil siswa di tabel `students` tidak pernah terisi nilai PIN baru, dan tetap bernilai `null` sehingga di fallback ke `123456`.
+   - Input PIN pada form identitas saat dibuka masih kosong string (`''`), bukan menampilkan PIN aktif siswa saat ini.
 
-- **Solusi yang Diterapkan:**
-  - Menjadikan kolom `pin` pada tabel `students` sebagai sumber sinkronisasi dua arah (saat siswa ganti PIN, saat siswa baru dibuat, dan saat guru mereset PIN).
-  - Menampilkan PIN aktif di kartu detail profil siswa dengan tombol intip (eye toggle) & salin PIN.
-  - Memperbarui dialog Kirim WA agar secara bawaan (*default*) mengirimkan PIN aktif siswa tanpa mereset akun, disertai opsi opsional (*toggle*) untuk mereset PIN jika memang diinginkan.
+2. **Tombol Kunci (Reset PIN di Tabel `ProfilesClientPage.tsx`):**
+   - Dialog tombol kunci selalu memaksa nilai input menjadi hardcoded `'123456'` saat dibuka, bukan PIN aktif siswa.
+   - Setelah reset berhasil, dialog tidak mengabari komponen tabel induk (`onStudentUpdated`) sehingga state siswa di tabel masih membawa PIN lama sebelum di-reload.
+
+3. **Halaman Detail Profil (`/profiles/[id]`):**
+   - Tombol "Reset PIN Siswa" (`ResetPinButton.tsx`) dan dialog kirim WhatsApp (`SendLoginWAButton.tsx`) belum memicu `router.refresh()`, sehingga kartu PIN aktif (`StudentActivePinCard`) dan pesan WA tidak langsung ter-update dengan data server terbaru tanpa refresh manual browser.
 
 ---
 
-## 2. Rencana Perubahan Komponen & Kode
+## Rencana Perubahan
 
-### A. Sinkronisasi Data PIN (`students.pin`)
-1. **Perbarui `src/types/index.ts`:**
-   - Tambahkan properti `pin?: string | null;` ke antarmuka `Student`.
-2. **Sinkronkan saat Siswa Ganti PIN (`src/app/(student)/home/actions.ts`):**
-   - Pada `changeStudentPinAction`, selain memperbarui password Auth Supabase, perbarui juga kolom `pin: cleanPin` pada tabel `students` untuk `id = user.id`.
-3. **Sinkronkan saat Guru Tambah Siswa (`src/app/(main)/profiles/actions.ts`):**
-   - Pada `addStudentAction`, sertakan `pin: newPin || '123456'` saat memasukkan baris baru ke tabel `students`.
-4. **Sinkronkan saat Guru Reset PIN (`src/app/(main)/profiles/actions.ts`):**
-   - Pada `resetStudentPinAction`, sertakan pembaruan `pin: pinToSet` pada tabel `students`.
-5. **Action Pembantu Simpan Nomor WA (`src/app/(main)/profiles/actions.ts`):**
-   - Buat fungsi aksi terpisah `updateStudentWhatsappAction(studentId, whatsappNumber)` agar saat mengirim pesan WA tanpa reset, nomor kontak wali tetap dapat diperbarui tanpa mengubah kredensial PIN siswa.
+### 1. Perbaikan Server Action (`src/app/(main)/profiles/actions.ts`)
+- **Pada `updateStudentAction`**:
+  - Ambil nilai `pin` dari `formData`.
+  - Jika PIN diisi dan valid 6 digit angka:
+    - Masukkan `updatePayload.pin = pin.trim()` ke dalam pembaruan tabel `students`.
+    - Perbarui password autentikasi akun siswa di Supabase Admin.
+  - Kembalikan data siswa lengkap terbaru (`updatedStudentData`) yang menyertakan nilai `pin` terkini.
+  - Tambahkan `revalidatePath('/profiles')` dan `revalidatePath('/profiles/${id}')`.
+- **Pada `resetStudentPinAction`**:
+  - Pastikan `pinToSet` selalu tersimpan rapi di kolom `students.pin` serta mengembalikan objek hasil yang sinkron.
 
-### B. Tampilan PIN Aktif di Kartu Profil Siswa
-1. **Komponen PIN Viewer di Halaman Profil (`src/app/(main)/profiles/[id]/page.tsx`):**
-   - Tampilkan badge/kartu informasi PIN aktif santri pada bagian info akun siswa.
-   - Berikan tombol intip/sembunyikan (ikon mata `Eye` / `EyeOff`) agar PIN tetap aman namun mudah dilihat guru saat siswa lupa.
-   - Tambahkan tombol salin PIN cepat dengan feedback visual (*toast*).
+### 2. Sinkronisasi Formulir Identitas (`src/app/(main)/profiles/ProfilesClientPage.tsx`)
+- **Pada `EditStudentDialog`**:
+  - Isi state awal input PIN dengan PIN aktif siswa (`student.pin || '123456'`) sesuai preferensi pengguna.
+  - Tambahkan tombol lihat/sembunyikan PIN (eye icon) dan tombol reset cepat.
+  - Saat form disimpan, data siswa yang diperbarui di state tabel langsung mencerminkan PIN baru tersebut.
 
-### C. Pembaruan Dialog Kirim WhatsApp (`SendLoginWAButton.tsx`)
-1. **Otomatis Gunakan PIN Aktif:**
-   - State awal PIN mengambil nilai `student.pin || '123456'`.
-   - Pesan WhatsApp langsung memuat PIN aktif siswa tersebut.
-2. **Kirim Tanpa Reset (Default):**
-   - Guru cukup menekan tombol "Kirim ke WhatsApp". Sistem tidak akan mereset password siswa di server, sehingga PIN yang sudah diubah siswa (misal `555555`) tetap aktif dan tidak berubah.
-3. **Pilihan Opsional Reset PIN:**
-   - Disediakan toggle/checkbox: *"Reset atau buat PIN baru untuk siswa ini"*.
-   - Hanya jika toggle ini dicentang oleh guru, sistem akan menjalankan `resetStudentPinAction` dengan nilai PIN baru.
+### 3. Sinkronisasi Tombol Kunci / Reset PIN di Tabel (`ProfilesClientPage.tsx`)
+- **Pada `ResetPinDialog`**:
+  - Tampilkan PIN aktif siswa saat dialog dibuka (`student.pin || '123456'`).
+  - Setelah berhasil direset, panggil callback `onStudentUpdated` agar daftar siswa di tabel langsung memperbarui nilai `pin` siswa tersebut secara instan.
+
+### 4. Sinkronisasi Halaman Detail Siswa (`src/app/(main)/profiles/[id]/`)
+- **Pada `ResetPinButton.tsx`**:
+  - Tambahkan hook `useRouter()` dari `next/navigation`.
+  - Panggil `router.refresh()` segera setelah PIN berhasil direset agar Kartu PIN Aktif dan seluruh komponen halaman detail langsung menampilkan PIN baru.
+- **Pada `SendLoginWAButton.tsx`**:
+  - Tambahkan `router.refresh()` setelah berhasil mereset PIN atau memperbarui nomor WA dari dalam modal WA.
+  - Pastikan teks template pesan WhatsApp selalu menggunakan PIN aktif terkini yang sinkron dengan kartu profil.
 
 ---
 
-## 3. Langkah Verifikasi & Pengujian
-1. **Cek Ganti PIN Siswa:**
-   - Memastikan saat siswa mengubah PIN, nilai `pin` tersimpan di Supabase dan langsung terbaca oleh guru.
-2. **Cek Halaman Detail Profil Siswa:**
-   - Memverifikasi tampilan PIN aktif dengan tombol intip/sembunyikan di `/profiles/[id]`.
-3. **Cek Dialog WhatsApp:**
-   - Memverifikasi pesan WhatsApp menggunakan PIN aktif siswa (`555555`).
-   - Memverifikasi pengiriman WA tanpa mereset PIN (PIN tetap tidak berubah).
-   - Memverifikasi opsi reset PIN berfungsi jika guru memilih untuk mereset.
-4. **Validasi Build:**
-   - Menjalankan `compile_applet` untuk memastikan tidak ada kesalahan TypeScript atau kompilasi.
+## Rencana Pengujian & Verifikasi
+
+1. **Kompilasi Aplikasi**:
+   - Jalankan `compile_applet` untuk memastikan seluruh tipe TypeScript, impor modul, dan komponen React valid tanpa error.
+2. **Pengujian Alur Identitas (Ubah Profil Siswa)**:
+   - Buka form ubah profil siswa, pastikan PIN aktif langsung tampil di kolom input.
+   - Ubah PIN (misal `555555`), simpan.
+   - Buka kembali tombol kunci, profil detail, atau kirim WA: pastikan PIN yang muncul adalah `555555` (bukan default `123456`).
+3. **Pengujian Alur Tombol Kunci**:
+   - Klik tombol kunci di tabel siswa, masukkan PIN baru (misal `888888`), klik Reset PIN.
+   - Periksa bahwa state tabel dan pesan WA langsung sinkron menampilkan `888888`.
+4. **Pengujian Halaman Detail Siswa**:
+   - Buka halaman detail profil `/profiles/[id]`.
+   - Cek `StudentActivePinCard`, tombol Reset PIN, dan tombol Kirim Akun Login WA agar saling sinkron secara real-time.

@@ -342,7 +342,8 @@ export async function updateStudentAction(
     const name = formData.get('name') as string;
     const studentClass = formData.get('class') as string;
     const whatsapp_number = formData.get('whatsapp_number') as string | null;
-    const pin = formData.get('pin') as string;
+    const rawPin = formData.get('pin') as string | null;
+    const pin = rawPin ? rawPin.trim() : null;
     const rawDailyLimit = formData.get('daily_limit') as string | null;
     const daily_limit = rawDailyLimit !== null && rawDailyLimit.trim() !== '' ? parseInt(rawDailyLimit.replace(/\D/g, '')) : null;
     const avatar_url = formData.get('avatar_url') as string | null;
@@ -351,7 +352,11 @@ export async function updateStudentAction(
         return { success: false, message: 'Data tidak lengkap. Mohon isi NIS, Nama, dan Kelas.' };
     }
 
-    // 1. Update the public student profile
+    if (pin && (pin.length !== 6 || !/^\d{6}$/.test(pin))) {
+        return { success: false, message: 'PIN harus terdiri dari tepat 6 digit angka.' };
+    }
+
+    // 1. Update the public student profile (termasuk kolom pin)
     const updatePayload: Record<string, any> = {
         nis,
         name,
@@ -359,6 +364,9 @@ export async function updateStudentAction(
         whatsapp_number,
         daily_limit
     };
+    if (pin) {
+        updatePayload.pin = pin;
+    }
     if (avatar_url !== null) {
         updatePayload.avatar_url = avatar_url.trim() || null;
     }
@@ -395,8 +403,8 @@ export async function updateStudentAction(
                 email_confirm: true,
             };
 
-            if (pin && pin.trim().length > 0) {
-                authUpdatePayload.password = pin.trim();
+            if (pin && pin.length === 6) {
+                authUpdatePayload.password = pin;
             }
 
             const { error: updateUserError } = await supabaseAdmin.auth.admin.updateUserById(
@@ -410,11 +418,11 @@ export async function updateStudentAction(
                     await supabaseAdmin.auth.admin.createUser({
                         id: id,
                         email: shadowEmail,
-                        password: pin && pin.trim().length > 0 ? pin.trim() : '123456',
+                        password: pin && pin.length === 6 ? pin : '123456',
                         email_confirm: true
                     });
-                } else if (pin && pin.trim().length > 0) {
-                    return { success: false, message: `Profil siswa diperbarui, tetapi gagal mereset PIN: ${updateUserError.message}` };
+                } else if (pin && pin.length === 6) {
+                    return { success: false, message: `Profil siswa diperbarui, tetapi gagal mereset PIN login: ${updateUserError.message}` };
                 }
             }
         }
@@ -647,7 +655,8 @@ export async function restoreStudentAction(
             .from('students')
             .update({
                 nis: originalNis,
-                name: restoredName
+                name: restoredName,
+                pin: defaultPin
             })
             .eq('id', studentId);
 
@@ -756,6 +765,7 @@ export async function importStudentsAction(csvContent: string): Promise<ImportRe
           class: student.class,
           user_id: user.id,
           whatsapp_number: student.whatsapp_number,
+          pin: student.pin,
         })
         .select()
         .single();

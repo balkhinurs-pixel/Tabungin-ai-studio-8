@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { 
   MessageCircle, 
   KeyRound, 
@@ -39,6 +40,7 @@ interface SendLoginWAButtonProps {
 }
 
 export default function SendLoginWAButton({ student, schoolCode }: SendLoginWAButtonProps) {
+  const router = useRouter();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
 
@@ -171,6 +173,7 @@ Terima kasih.`.trim();
             variant: 'destructive',
           });
         } else {
+          router.refresh();
           toast({
             title: 'PIN Berhasil Direset',
             description: `PIN siswa diperbarui menjadi ${targetPin}.`,
@@ -180,6 +183,7 @@ Terima kasih.`.trim();
         // Alur Default: Hanya perbarui nomor WA jika berubah, TANPA mereset PIN siswa
         if (whatsappNumber && whatsappNumber !== student.whatsapp_number) {
           await updateStudentWhatsappAction(student.id, whatsappNumber);
+          router.refresh();
         }
       }
 

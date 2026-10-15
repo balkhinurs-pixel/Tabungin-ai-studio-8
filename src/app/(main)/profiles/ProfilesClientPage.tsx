@@ -23,7 +23,7 @@ import {
   } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { PlusCircle, Download, Upload, Filter, Search, ShieldCheck, User, KeyRound, Pencil, Trash2, Save, Loader2, Info, ArrowRight, RotateCcw, SortAsc, X, Archive, RefreshCw, Check, Copy, MessageSquare, Camera, UploadCloud } from 'lucide-react';
+import { PlusCircle, Download, Upload, Filter, Search, ShieldCheck, User, KeyRound, Pencil, Trash2, Save, Loader2, Info, ArrowRight, RotateCcw, SortAsc, X, Archive, RefreshCw, Check, Copy, MessageSquare, Camera, UploadCloud, Eye, EyeOff } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
@@ -74,7 +74,8 @@ const EditStudentDialog = ({
     const [studentClass, setStudentClass] = useState(student?.class || '');
     const [whatsappNumber, setWhatsappNumber] = useState(student?.whatsapp_number || '');
     const [dailyLimit, setDailyLimit] = useState(student?.daily_limit ? String(student.daily_limit) : '');
-    const [pin, setPin] = useState('');
+    const [pin, setPin] = useState(student?.pin || '123456');
+    const [showPin, setShowPin] = useState(false);
     const [avatarUrl, setAvatarUrl] = useState(student?.avatar_url || '');
     const [uploadingPhoto, setUploadingPhoto] = useState(false);
     const photoInputRef = useRef<HTMLInputElement>(null);
@@ -91,7 +92,8 @@ const EditStudentDialog = ({
             setStudentClass(student.class);
             setWhatsappNumber(student.whatsapp_number || '');
             setDailyLimit(student.daily_limit ? String(student.daily_limit) : '');
-            setPin('');
+            setPin(student.pin || '123456');
+            setShowPin(false);
             setAvatarUrl(student.avatar_url || '');
             setShowArchiveConfirm(false);
         }
@@ -121,7 +123,7 @@ const EditStudentDialog = ({
     };
 
     const handleSubmit = async (formData: FormData) => {
-        if (pin && pin.length !== 6) {
+        if (pin && (pin.length !== 6 || !/^\d{6}$/.test(pin))) {
             toast({
                 title: 'PIN Tidak Valid',
                 description: 'PIN harus terdiri dari tepat 6 digit angka.',
@@ -131,6 +133,8 @@ const EditStudentDialog = ({
         }
 
         setLoading(true);
+        // Pastikan pin yang ada di state ikut dikirimkan
+        formData.set('pin', pin);
         const result = await updateStudentAction(formData);
         setLoading(false);
 
@@ -299,19 +303,32 @@ const EditStudentDialog = ({
                                 <RotateCcw className="mr-1 h-3 w-3" /> Gunakan 123456
                             </Button>
                         </div>
-                        <Input 
-                            id="edit-pin" 
-                            name="pin" 
-                            value={pin} 
-                            onChange={handlePinChange} 
-                            placeholder="Biarkan kosong jika tidak diubah" 
-                            maxLength={6}
-                            inputMode="numeric"
-                        />
-                         <Alert variant="default" className="mt-2 text-blue-800 bg-blue-50 border-blue-200">
-                           <Info className="h-4 w-4 !text-blue-800" />
-                           <AlertDescription>
-                            Isi hanya jika Anda ingin mereset PIN siswa. Biarkan kosong untuk tetap menggunakan PIN lama.
+                        <div className="relative">
+                            <Input 
+                                id="edit-pin" 
+                                name="pin" 
+                                type={showPin ? "text" : "password"}
+                                value={pin} 
+                                onChange={handlePinChange} 
+                                placeholder="Contoh: 123456" 
+                                maxLength={6}
+                                inputMode="numeric"
+                                className="font-mono tracking-widest text-base pr-10"
+                            />
+                            <button
+                                type="button"
+                                onClick={() => setShowPin(!showPin)}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                                title={showPin ? "Sembunyikan PIN" : "Tampilkan PIN"}
+                                tabIndex={-1}
+                            >
+                                {showPin ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                            </button>
+                        </div>
+                        <Alert variant="default" className="mt-2 text-indigo-900 bg-indigo-50 border-indigo-200">
+                           <Info className="h-4 w-4 !text-indigo-800" />
+                           <AlertDescription className="text-xs">
+                            PIN aktif saat ini. Anda dapat langsung mengeditnya (6 digit angka) untuk mengganti PIN login dan transaksi siswa tanpa perlu reset.
                            </AlertDescription>
                         </Alert>
                     </div>
@@ -361,14 +378,16 @@ const EditStudentDialog = ({
 
 const ResetStudentPinDialog = ({
     student,
-    resetStudentPinAction
+    resetStudentPinAction,
+    onStudentUpdated
 }: {
     student: Student;
     resetStudentPinAction: BoundResetStudentPinAction;
+    onStudentUpdated?: (updatedStudent: Student) => void;
 }) => {
     const { toast } = useToast();
     const [open, setOpen] = useState(false);
-    const [pin, setPin] = useState('123456');
+    const [pin, setPin] = useState(student?.pin || '123456');
     const [loading, setLoading] = useState(false);
     const [newPinResult, setNewPinResult] = useState<string | null>(null);
     const [copied, setCopied] = useState(false);
@@ -393,7 +412,14 @@ const ResetStudentPinDialog = ({
         setLoading(false);
 
         if (result.success) {
-            setNewPinResult(result.pin || pin);
+            const finalPin = result.pin || pin;
+            setNewPinResult(finalPin);
+            if (onStudentUpdated) {
+                onStudentUpdated({
+                    ...student,
+                    pin: finalPin
+                });
+            }
             toast({
                 title: 'PIN Berhasil Direset',
                 description: result.message,
@@ -438,7 +464,7 @@ _Pesan otomatis dari Sistem Tabungan Digital Sekolah._`;
     const handleOpenChange = (isOpen: boolean) => {
         setOpen(isOpen);
         if (isOpen) {
-            setPin('123456');
+            setPin(student.pin || '123456');
             setNewPinResult(null);
             setCopied(false);
         }
@@ -503,9 +529,14 @@ _Pesan otomatis dari Sistem Tabungan Digital Sekolah._`;
                     <div className="space-y-4 py-3">
                         <div className="space-y-2">
                             <div className="flex items-center justify-between">
-                                <Label htmlFor="reset-pin-val" className="text-xs font-bold text-foreground">
-                                    PIN Baru (6 Digit Angka)
-                                </Label>
+                                <div className="flex items-center gap-1.5">
+                                    <Label htmlFor="reset-pin-val" className="text-xs font-bold text-foreground">
+                                        PIN Baru (6 Digit Angka)
+                                    </Label>
+                                    <span className="text-[10px] font-semibold bg-purple-100 text-purple-800 px-1.5 py-0.5 rounded">
+                                        PIN Aktif: {student.pin || '123456'}
+                                    </span>
+                                </div>
                                 <Button
                                     type="button"
                                     variant="link"
@@ -519,7 +550,7 @@ _Pesan otomatis dari Sistem Tabungan Digital Sekolah._`;
                                 id="reset-pin-val"
                                 value={pin}
                                 onChange={handlePinChange}
-                                placeholder="123456"
+                                placeholder={student.pin || '123456'}
                                 maxLength={6}
                                 inputMode="numeric"
                                 className="font-mono text-base tracking-widest text-center h-12"
@@ -529,7 +560,7 @@ _Pesan otomatis dari Sistem Tabungan Digital Sekolah._`;
                         <Alert variant="default" className="text-purple-900 bg-purple-50 border-purple-200">
                             <Info className="h-4 w-4 !text-purple-800" />
                             <AlertDescription className="text-xs">
-                                PIN default adalah <strong>123456</strong>. Siswa juga dapat mengubah PIN mereka mandiri di dasbor siswa.
+                                Masukkan 6 digit PIN baru atau gunakan PIN aktif saat ini. Setelah disimpan, seluruh profil, kartu PIN, dan pesan WhatsApp langsung sinkron seketika.
                             </AlertDescription>
                         </Alert>
                     </div>
@@ -1258,6 +1289,7 @@ export default function ProfilesClientPage({
                                         <ResetStudentPinDialog
                                             student={student}
                                             resetStudentPinAction={resetStudentPinAction}
+                                            onStudentUpdated={handleUpdateStudent}
                                         />
                                         <EditStudentDialog 
                                             student={student} 
