@@ -29,7 +29,19 @@ export async function changeStudentPinAction(newPin: string) {
       return { success: false, message: `Gagal mengubah PIN: ${error.message}` };
     }
 
+    // Sinkronkan PIN aktif ke tabel students agar dapat dilihat oleh guru tanpa perlu reset
+    try {
+      await supabase
+        .from('students')
+        .update({ pin: cleanPin })
+        .eq('id', user.id);
+    } catch (dbErr) {
+      console.warn('Gagal memperbarui students.pin:', dbErr);
+    }
+
     revalidatePath('/home');
+    revalidatePath('/profiles');
+    revalidatePath(`/profiles/${user.id}`);
     return { success: true, message: 'PIN Anda berhasil diperbarui.' };
   } catch (err: any) {
     console.error('Unexpected error changing student PIN:', err);

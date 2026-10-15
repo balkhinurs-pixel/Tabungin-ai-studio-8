@@ -9,6 +9,7 @@ import PrintReportButton from './_components/PrintReportButton';
 import SendWAButton from './_components/SendWAButton';
 import SendLoginWAButton from './_components/SendLoginWAButton';
 import ResetPinButton from './_components/ResetPinButton';
+import StudentActivePinCard from './_components/StudentActivePinCard';
 import TransactionList from './_components/TransactionList';
 import { cn } from '@/lib/utils';
 
@@ -181,6 +182,9 @@ export default async function StudentProfilePage({ params }: StudentProfilePageP
           </div>
         </CardContent>
       </Card>
+
+      {/* Kartu PIN Aktif Siswa (Dapat dilihat guru tanpa perlu reset) */}
+      <StudentActivePinCard student={student} />
 
       {/* Pocket Money Limit Info Card */}
       <div className="p-3.5 bg-amber-50/70 border border-amber-200/80 rounded-2xl flex items-center justify-between gap-3 text-xs">

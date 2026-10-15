@@ -1,82 +1,65 @@
-# Fitur Pengiriman Kredensial Login Siswa via WhatsApp
+# Rencana Implementasi: Tampilkan PIN Aktif Siswa & Kirim Akun via WA Tanpa Reset
 
-Rencana implementasi fitur bagi guru untuk mengirimkan informasi akun login santri/siswa (Nama, User/NIS, PIN, Kode Sekolah, dan Alamat Tautan Login Langsung) ke nomor WhatsApp wali murid dengan sekali klik melalui web redirect WhatsApp (`wa.me`).
-
-## User Review Required
-
-> [!IMPORTANT]
-> Fitur ini ditempatkan secara eksklusif di halaman **Detail Profil Siswa (`/profiles/[id]`)** sesuai preferensi Anda. Karena Supabase Auth mengenkripsi kata sandi/PIN satu arah (hashing demi keamanan data), dialog ini menyediakan opsi bagi guru untuk mengonfirmasi atau mengatur PIN baru (misal jika siswa lupa PIN). Sistem akan otomatis memperbarui PIN di server autentikasi dan langsung membuat pesan WhatsApp terformat rapi dengan link login instan yang langsung terisi NIS & Kode Sekolah.
+Berdasarkan kebutuhan Anda:
+1. Siswa yang mengganti PIN (misal `555555`) dapat dilihat PIN aktifnya oleh Guru/Admin tanpa harus mereset PIN.
+2. Pengiriman pesan WhatsApp akun login siswa secara otomatis menggunakan PIN aktif saat ini tanpa mereset PIN.
+3. Tetap tersedia opsi opsional jika sewaktu-waktu guru memang berniat mereset PIN siswa.
 
 ---
 
-## Arsitektur & Alur Kerja Fitur
+## 1. Analisis Masalah & Kebutuhan
+- **Kondisi Sebelumnya:**
+  - Saat siswa mengganti PIN di `/home` (`changeStudentPinAction`), sistem hanya memperbarui kata sandi di Supabase Auth (yang di-*hash* satu arah), sehingga nilai teks PIN tidak tersimpan di tabel `students`.
+  - Tombol WhatsApp (`SendLoginWAButton`) sebelumnya memaksakan reset PIN ke `123456` setiap kali pesan dikirim.
+  - Kartu profil siswa belum menampilkan PIN aktif siswa secara langsung.
 
-```
-Guru membuka /profiles/[id]
-         │
-         ▼
-Klik tombol "Kirim Akun Login via WA"
-         │
-         ▼
-Muncul Dialog:
- ├── Ringkasan: Nama Siswa, NIS, Kode Sekolah
- ├── Input PIN (default 123456 atau ketik PIN baru jika lupa)
- ├── Nomor WhatsApp Wali (otomatis terisi / bisa diedit)
- └── Live Preview Pesan WhatsApp
-         │
-         ▼
-Klik "Kirim ke WhatsApp"
- ├── Memperbarui PIN siswa di auth (resetStudentPinAction)
- └── Membuka URL wa.me/... di tab baru (otomatis membuka WhatsApp Web / Aplikasi WA)
-```
+- **Solusi yang Diterapkan:**
+  - Menjadikan kolom `pin` pada tabel `students` sebagai sumber sinkronisasi dua arah (saat siswa ganti PIN, saat siswa baru dibuat, dan saat guru mereset PIN).
+  - Menampilkan PIN aktif di kartu detail profil siswa dengan tombol intip (eye toggle) & salin PIN.
+  - Memperbarui dialog Kirim WA agar secara bawaan (*default*) mengirimkan PIN aktif siswa tanpa mereset akun, disertai opsi opsional (*toggle*) untuk mereset PIN jika memang diinginkan.
 
 ---
 
-## Komponen & Perubahan yang Direncanakan
+## 2. Rencana Perubahan Komponen & Kode
 
-### 1. Komponen Baru: `SendLoginWAButton.tsx`
-- **Lokasi**: `/src/app/(main)/profiles/[id]/_components/SendLoginWAButton.tsx`
-- **Tampilan Tombol**: Tombol bergaya modern dengan warna khas WhatsApp (latar hijau emerald, ikon kunci/pesan WhatsApp `KeyRound` / `MessageCircle`, label *"Kirim Akun Login via WA"*).
-- **Dialog Modal**:
-  - Tampilan kredensial: Nama Siswa, Kelas, NIS (Username), Kode Sekolah (`school_code`).
-  - Input PIN 6 digit (tersedia tombol cepat *"Gunakan 123456"* dan validasi angka).
-  - Input Nomor WhatsApp tujuan (mengambil nomor wali dari database, guru dapat mengubah jika diperlukan).
-  - Opsi simpan nomor WA baru ke profil siswa jika guru memperbarui nomor di dialog.
-  - Kotak Pratinjau Pesan yang rapi dan elegan sebelum dikirim.
-  - Tombol *"Buka WhatsApp"* yang otomatis mengarahkan ke `https://wa.me/{nomor}?text={pesan}`.
+### A. Sinkronisasi Data PIN (`students.pin`)
+1. **Perbarui `src/types/index.ts`:**
+   - Tambahkan properti `pin?: string | null;` ke antarmuka `Student`.
+2. **Sinkronkan saat Siswa Ganti PIN (`src/app/(student)/home/actions.ts`):**
+   - Pada `changeStudentPinAction`, selain memperbarui password Auth Supabase, perbarui juga kolom `pin: cleanPin` pada tabel `students` untuk `id = user.id`.
+3. **Sinkronkan saat Guru Tambah Siswa (`src/app/(main)/profiles/actions.ts`):**
+   - Pada `addStudentAction`, sertakan `pin: newPin || '123456'` saat memasukkan baris baru ke tabel `students`.
+4. **Sinkronkan saat Guru Reset PIN (`src/app/(main)/profiles/actions.ts`):**
+   - Pada `resetStudentPinAction`, sertakan pembaruan `pin: pinToSet` pada tabel `students`.
+5. **Action Pembantu Simpan Nomor WA (`src/app/(main)/profiles/actions.ts`):**
+   - Buat fungsi aksi terpisah `updateStudentWhatsappAction(studentId, whatsappNumber)` agar saat mengirim pesan WA tanpa reset, nomor kontak wali tetap dapat diperbarui tanpa mengubah kredensial PIN siswa.
 
-### 2. Format Pesan WhatsApp
-Format pesan yang dihasilkan akan profesional dan mudah dibaca oleh wali murid:
-```text
-Assalamu'alaikum Warahmatullahi Wabarakatuh,
-Yth. Bapak/Ibu Wali dari *[Nama Siswa]*
+### B. Tampilan PIN Aktif di Kartu Profil Siswa
+1. **Komponen PIN Viewer di Halaman Profil (`src/app/(main)/profiles/[id]/page.tsx`):**
+   - Tampilkan badge/kartu informasi PIN aktif santri pada bagian info akun siswa.
+   - Berikan tombol intip/sembunyikan (ikon mata `Eye` / `EyeOff`) agar PIN tetap aman namun mudah dilihat guru saat siswa lupa.
+   - Tambahkan tombol salin PIN cepat dengan feedback visual (*toast*).
 
-Berikut informasi akun login santri/siswa untuk aplikasi Tabung.in:
-━━━━━━━━━━━━━━━━━━━━
-👤 *Nama Siswa:* [Nama Siswa]
-🏫 *Kode Sekolah:* [Kode Sekolah]
-🆔 *User / NIS:* [NIS]
-🔑 *PIN Masuk:* [PIN]
-━━━━━━━━━━━━━━━━━━━━
-
-🌐 *Alamat Login Langsung Siswa:*
-https://[domain-aplikasi]/student-login?school_code=[KODE_SEKOLAH]&nis=[NIS]
-
-*(Klik link di atas untuk langsung membuka layar input PIN santri tanpa perlu mengetik ulang NIS)*
-
-Simpan informasi login ini dengan baik.
-Terima kasih.
-```
-
-### 3. Integrasi di Halaman Detail Profil Siswa
-- **Lokasi**: `/src/app/(main)/profiles/[id]/page.tsx`
-- Mengambil data profil guru untuk membaca atribut `school_code`.
-- Menyematkan `<SendLoginWAButton>` di bagian *"Laporan & Keamanan Akun"*, berdampingan secara harmonis dengan tombol laporan saldo dan tombol reset PIN.
+### C. Pembaruan Dialog Kirim WhatsApp (`SendLoginWAButton.tsx`)
+1. **Otomatis Gunakan PIN Aktif:**
+   - State awal PIN mengambil nilai `student.pin || '123456'`.
+   - Pesan WhatsApp langsung memuat PIN aktif siswa tersebut.
+2. **Kirim Tanpa Reset (Default):**
+   - Guru cukup menekan tombol "Kirim ke WhatsApp". Sistem tidak akan mereset password siswa di server, sehingga PIN yang sudah diubah siswa (misal `555555`) tetap aktif dan tidak berubah.
+3. **Pilihan Opsional Reset PIN:**
+   - Disediakan toggle/checkbox: *"Reset atau buat PIN baru untuk siswa ini"*.
+   - Hanya jika toggle ini dicentang oleh guru, sistem akan menjalankan `resetStudentPinAction` dengan nilai PIN baru.
 
 ---
 
-## Rencana Verifikasi
-1. **Pengujian Tampilan**: Memastikan tombol tampil rapi, responsif di mobile dan desktop.
-2. **Pengujian Update PIN**: Menguji input PIN baru, memastikan tersimpan ke Supabase auth via Server Action.
-3. **Pengujian URL Tautan**: Memastikan link login yang disertakan memuat `school_code` dan `nis` yang benar sehingga membuka mode PIN keypad saat diklik siswa.
-4. **Verifikasi Build**: Menjalankan pengujian sintaksis dan kompilasi untuk memastikan tidak ada regresi.
+## 3. Langkah Verifikasi & Pengujian
+1. **Cek Ganti PIN Siswa:**
+   - Memastikan saat siswa mengubah PIN, nilai `pin` tersimpan di Supabase dan langsung terbaca oleh guru.
+2. **Cek Halaman Detail Profil Siswa:**
+   - Memverifikasi tampilan PIN aktif dengan tombol intip/sembunyikan di `/profiles/[id]`.
+3. **Cek Dialog WhatsApp:**
+   - Memverifikasi pesan WhatsApp menggunakan PIN aktif siswa (`555555`).
+   - Memverifikasi pengiriman WA tanpa mereset PIN (PIN tetap tidak berubah).
+   - Memverifikasi opsi reset PIN berfungsi jika guru memilih untuk mereset.
+4. **Validasi Build:**
+   - Menjalankan `compile_applet` untuk memastikan tidak ada kesalahan TypeScript atau kompilasi.

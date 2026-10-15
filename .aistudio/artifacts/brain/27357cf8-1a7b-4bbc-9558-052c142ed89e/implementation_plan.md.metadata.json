@@ -1,6 +1,6 @@
 {
-  "summary": "Rencana implementasi tombol dan dialog Kirim Akun Login Siswa (Nama, User/NIS, PIN, dan Alamat Login Siswa) ke WhatsApp Wali melalui Web Redirect WhatsApp pada halaman detail profil siswa.",
-  "updatedAt": "2026-10-15T08:31:26.428097855Z",
+  "summary": "Rencana implementasi penyimpanan & sinkronisasi PIN aktif siswa, penampil PIN aktif di profil siswa (dengan fitur lihat/sembunyikan), serta opsi kirim pesan WhatsApp dengan PIN aktif tanpa mereset PIN (disertai opsi opsional reset PIN jika diperlukan).",
+  "updatedAt": "2026-10-15T09:36:18.972920769Z",
   "requestFeedback": true,
   "userFacing": true
 }

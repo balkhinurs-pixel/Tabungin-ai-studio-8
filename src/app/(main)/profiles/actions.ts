@@ -173,6 +173,7 @@ export async function addStudentAction(
       class: newStudentClass,
       user_id: user.id, // The admin/teacher user_id who created the student
       whatsapp_number: newWhatsappNumber,
+      pin: newPin || '123456',
       daily_limit: daily_limit || null,
       avatar_url: avatar_url || null
     })
@@ -275,11 +276,15 @@ export async function resetStudentPinAction(
       }
     }
 
-    // 6. Jika ada perubahan nomor WhatsApp, update juga tabel students
+    // 6. Sinkronkan nilai PIN (dan nomor WA jika disertakan) ke tabel students
+    const updatePayload: Record<string, any> = { pin: pinToSet };
     if (whatsappNumber !== undefined) {
-      const cleanPhone = whatsappNumber.trim() ? whatsappNumber.trim() : null;
-      await supabase.from('students').update({ whatsapp_number: cleanPhone }).eq('id', studentId);
+      updatePayload.whatsapp_number = whatsappNumber.trim();
     }
+    await supabase
+      .from('students')
+      .update(updatePayload)
+      .eq('id', studentId);
 
     revalidatePath('/profiles');
     revalidatePath(`/profiles/${studentId}`);
@@ -293,6 +298,38 @@ export async function resetStudentPinAction(
   } catch (err: any) {
     console.error('Error resetting student PIN:', err);
     return { success: false, message: `Terjadi kesalahan saat mereset PIN: ${err.message || err}` };
+  }
+}
+
+export async function updateStudentWhatsappAction(
+  studentId: string,
+  whatsappNumber: string
+): Promise<{ success: boolean; message: string }> {
+  if (!studentId) {
+    return { success: false, message: 'ID Siswa tidak valid.' };
+  }
+
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return { success: false, message: 'Sesi login telah berakhir.' };
+  }
+
+  try {
+    const { error } = await supabase
+      .from('students')
+      .update({ whatsapp_number: whatsappNumber.trim() })
+      .eq('id', studentId);
+
+    if (error) {
+      return { success: false, message: `Gagal memperbarui nomor WhatsApp: ${error.message}` };
+    }
+
+    revalidatePath('/profiles');
+    revalidatePath(`/profiles/${studentId}`);
+    return { success: true, message: 'Nomor WhatsApp berhasil diperbarui.' };
+  } catch (err: any) {
+    return { success: false, message: `Terjadi kesalahan: ${err.message || err}` };
   }
 }
 

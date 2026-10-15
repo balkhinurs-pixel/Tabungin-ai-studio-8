@@ -67,6 +67,7 @@ export interface Student {
   class: string;
   avatar_url?: string | null;
   whatsapp_number?: string | null;
+  pin?: string | null;
   daily_limit?: number | null;
   created_at?: string;
   user_id?: string;

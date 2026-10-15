@@ -36,6 +36,16 @@ export async function studentLogin(formData: FormData) {
   }
 
   if (data.user) {
+    // Sinkronkan pin aktif ke record siswa jika sebelumnya kosong atau belum tersimpan
+    try {
+      await supabase
+        .from('students')
+        .update({ pin })
+        .eq('id', data.user.id);
+    } catch (e) {
+      // abaikan jika gagal sinkronisasi latar belakang
+    }
+
     revalidatePath('/', 'layout');
     // Redirect to the student's own dashboard page.
     return redirect(`/home`);
