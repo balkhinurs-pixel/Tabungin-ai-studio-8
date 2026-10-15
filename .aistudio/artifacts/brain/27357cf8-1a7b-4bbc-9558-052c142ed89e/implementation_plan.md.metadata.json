@@ -1,6 +1,6 @@
 {
-  "summary": "Rencana implementasi penataan visual warna Cash (Emerald Green) dan ATM (Banking Blue) pada seluruh halaman transaksi dan riwayat, serta penambahan fitur Harga Modal (Asli), Harga Jual, margin profit per menu, dan rekapitulasi laba kotor di riwayat kantin.",
-  "updatedAt": "2026-10-13T00:44:09.961403854Z",
+  "summary": "Rencana implementasi fitur pemantauan saldo siswa untuk Admin Pusat di panel admin, mencakup menu navigasi Saldo Siswa, filter sekolah, pencarian real-time, ringkasan metrik total saldo, serta tabel informasi NIS, nama, kelas, sekolah, dan nominal saldo.",
+  "updatedAt": "2026-10-14T23:02:05.361665903Z",
   "requestFeedback": true,
   "userFacing": true
 }

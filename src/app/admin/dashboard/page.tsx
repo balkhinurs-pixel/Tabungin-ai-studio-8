@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic';
 import Link from 'next/link';
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Users, Key, Receipt, ArrowRight, TrendingUp, TrendingDown, ShieldCheck } from "lucide-react";
+import { Users, Key, Receipt, ArrowRight, TrendingUp, TrendingDown, ShieldCheck, Wallet, GraduationCap } from "lucide-react";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 async function getStats() {
@@ -22,7 +22,9 @@ async function getStats() {
           proUsers: 0, 
           totalTransactions: 0, 
           totalIncome: 0, 
-          totalExpense: 0 
+          totalExpense: 0,
+          totalStudents: 0,
+          netBalance: 0
         };
     }
 
@@ -47,12 +49,22 @@ async function getStats() {
         });
     }
 
+    // 3. Students
+    const { count: studentCount } = await supabaseAdmin
+        .from('students')
+        .select('*', { count: 'exact', head: true });
+
+    const totalStudents = studentCount || 0;
+    const netBalance = totalIncome - totalExpense;
+
     return { 
       totalUsers, 
       proUsers, 
       totalTransactions, 
       totalIncome, 
-      totalExpense 
+      totalExpense,
+      totalStudents,
+      netBalance
     };
 }
 
@@ -73,16 +85,24 @@ export default async function AdminDashboard() {
           <div>
             <h1 className="text-3xl font-black tracking-tight text-foreground">Dashboard Admin Pusat</h1>
             <p className="text-muted-foreground text-sm">
-              Pantau seluruh akun sekolah/guru, kuota, aktivasi kode, dan seluruh mutasi transaksi santri.
+              Pantau seluruh akun sekolah/guru, saldo tabungan siswa, kuota, dan mutasi kas digital.
             </p>
           </div>
-          <Button asChild className="gap-2 shadow-sm font-bold">
-            <Link href="/admin/transactions">
-              <Receipt className="h-4 w-4" />
-              Pantau & Edit Transaksi
-              <ArrowRight className="h-4 w-4 ml-1" />
-            </Link>
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button asChild variant="outline" className="gap-2 shadow-sm font-bold">
+              <Link href="/admin/students">
+                <Wallet className="h-4 w-4 text-emerald-600" />
+                Pantau Saldo Siswa
+              </Link>
+            </Button>
+            <Button asChild className="gap-2 shadow-sm font-bold">
+              <Link href="/admin/transactions">
+                <Receipt className="h-4 w-4" />
+                Pantau Transaksi
+                <ArrowRight className="h-4 w-4 ml-1" />
+              </Link>
+            </Button>
+          </div>
         </div>
 
         {/* Highlight Banner */}
@@ -153,15 +173,36 @@ export default async function AdminDashboard() {
         </div>
 
         {/* Quick Links */}
-        <div className="grid gap-4 md:grid-cols-2">
-          <Card className="border shadow-sm hover:border-primary/50 transition-colors">
+        <div className="grid gap-4 md:grid-cols-3">
+          <Card className="border shadow-sm hover:border-emerald-500/50 transition-colors">
             <CardContent className="p-6 flex flex-col justify-between h-full gap-4">
               <div>
                 <div className="flex items-center gap-2 mb-2">
                   <div className="h-8 w-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
+                    <Wallet className="h-4 w-4" />
+                  </div>
+                  <h3 className="font-bold text-lg text-foreground">Pantau Saldo Siswa</h3>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Lihat sisa saldo tabungan santri/siswa seluruh sekolah, filter berdasarkan akun pengelola atau kelas, serta unduh rekap data.
+                </p>
+              </div>
+              <Button asChild variant="outline" className="w-full justify-between font-bold border-emerald-500/30 hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-950/30">
+                <Link href="/admin/students">
+                  Buka Saldo Siswa <ArrowRight className="h-4 w-4" />
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card className="border shadow-sm hover:border-primary/50 transition-colors">
+            <CardContent className="p-6 flex flex-col justify-between h-full gap-4">
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="h-8 w-8 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold">
                     <Receipt className="h-4 w-4" />
                   </div>
-                  <h3 className="font-bold text-lg text-foreground">Pantau & Koreksi Transaksi Guru</h3>
+                  <h3 className="font-bold text-lg text-foreground">Pantau & Koreksi Transaksi</h3>
                 </div>
                 <p className="text-sm text-muted-foreground">
                   Lihat mutasi kas dari setiap sekolah, cari berdasarkan NIS atau nama santri, serta ubah nominal atau hapus transaksi yang salah input secara langsung.
