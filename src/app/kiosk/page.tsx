@@ -158,16 +158,33 @@ export default function KioskPage() {
 
   // Continuous Auto-Focus for Device Input in DEVICE mode (Android/iOS Bluetooth wedge friendly)
   useEffect(() => {
-    if (kioskState === 'SCANNING' && activeScanMode === 'DEVICE' && !manualInputOpen) {
+    // Jangan pernah curi fokus jika modal Kode Sekolah, Rekap Kas, atau Input Manual sedang dibuka
+    if (isSchoolCodeModalOpen || isSettlementOpen || manualInputOpen) {
+      return;
+    }
+
+    if (kioskState === 'SCANNING' && activeScanMode === 'DEVICE') {
       const timer = setInterval(() => {
-        if (document.activeElement !== deviceInputRef.current && !manualInputOpen) {
-          deviceInputRef.current?.focus();
+        const activeEl = document.activeElement;
+        const isUserTyping = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA') && activeEl !== deviceInputRef.current;
+        
+        // Hanya arahkan fokus ke scanner jika pengguna sedang TIDAK mengetik di input form apapun
+        if (!isUserTyping && !manualInputOpen && !isSchoolCodeModalOpen && !isSettlementOpen) {
+          if (activeEl !== deviceInputRef.current) {
+            deviceInputRef.current?.focus();
+          }
         }
       }, 400);
-      deviceInputRef.current?.focus();
+
+      const activeEl = document.activeElement;
+      const isUserTyping = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA') && activeEl !== deviceInputRef.current;
+      if (!isUserTyping) {
+        deviceInputRef.current?.focus();
+      }
+
       return () => clearInterval(timer);
     }
-  }, [kioskState, activeScanMode, manualInputOpen]);
+  }, [kioskState, activeScanMode, manualInputOpen, isSchoolCodeModalOpen, isSettlementOpen]);
 
   const { toast } = useToast();
 
@@ -208,14 +225,18 @@ export default function KioskPage() {
     if (kioskState !== 'SCANNING') return; // Only listen in SCANNING state
 
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      // Jangan pernah intersep tombol jika modal Kode Sekolah, Rekap Kas, atau Input Manual sedang dibuka
+      if (isSchoolCodeModalOpen || isSettlementOpen || manualInputOpen) {
+        return;
+      }
+
       const target = e.target as HTMLElement;
       const targetTag = target?.tagName?.toUpperCase();
       
-      // Do not intercept if student is explicitly typing in text inputs (except in SCANNING state)
-      if (kioskState !== 'SCANNING' && (targetTag === 'INPUT' || targetTag === 'TEXTAREA')) {
+      // Jika pengguna sedang aktif mengetik di kolom input teks mana pun, jangan intersep
+      if (targetTag === 'INPUT' || targetTag === 'TEXTAREA') {
         return;
       }
-      if (manualInputOpen) return;
 
       const now = Date.now();
       const timeDiff = now - lastKeyTimeRef.current;
@@ -251,7 +272,7 @@ export default function KioskPage() {
     return () => {
       window.removeEventListener('keydown', handleGlobalKeyDown, true);
     };
-  }, [kioskState, manualInputOpen]);
+  }, [kioskState, manualInputOpen, isSchoolCodeModalOpen, isSettlementOpen]);
 
   // Dedicated listener for PIN & Custom Amount external keyboard/numpad input
   useEffect(() => {
@@ -1464,6 +1485,10 @@ export default function KioskPage() {
                     placeholder="Ketik kode sekolah..." 
                     className="w-full h-12 bg-slate-950 border border-slate-700 rounded-xl px-3.5 text-white font-mono font-bold text-sm focus:outline-none focus:border-blue-500 uppercase tracking-widest"
                     autoFocus
+                    autoCapitalize="characters"
+                    autoComplete="off"
+                    autoCorrect="off"
+                    spellCheck="false"
                     required
                   />
                 </div>
