@@ -74,12 +74,14 @@ export async function middleware(request: NextRequest) {
   if (user) {
     const { data: profile } = await supabase
       .from('profiles')
-      .select('role, school_code, school_name')
+      .select('role, school_code, school_name, approval_status')
       .eq('id', user.id)
       .single();
 
     const isStudentEmail = user.email?.endsWith('.supabase.user');
     const isCantineEmail = user.email?.endsWith('.kantin.user');
+    const isSuperAdminEmail = user.email?.toLowerCase() === 'balkhinurs@gmail.com';
+    const isActuallyAdmin = isSuperAdminEmail || profile?.role === 'ADMIN';
 
     // A. Role SISWA
     if (isStudentEmail || (profile && profile.role === 'STUDENT')) {
@@ -97,34 +99,50 @@ export async function middleware(request: NextRequest) {
       return response;
     }
 
-    // C. Alur Guru (TEACHER) & Admin Pusat (ADMIN)
+    // C. Admin Pusat (ADMIN / Super Admin)
+    if (isActuallyAdmin) {
+      if (isAuthRoute || pathname === '/pending-approval' || pathname === '/welcome') {
+        return NextResponse.redirect(new URL('/admin/dashboard', request.url));
+      }
+      return response;
+    }
+
+    // D. Alur Guru (TEACHER) & Pengguna Biasa
     if (!pathname.startsWith('/_next') && !pathname.includes('.')) {
-        if (profile) {
-          const isActuallyAdmin = profile.role === 'ADMIN' || user.email?.toLowerCase() === 'balkhinurs@gmail.com';
-          const isActuallyTeacher = !isActuallyAdmin && (Boolean(profile.school_code && profile.role !== 'CANTINE' && profile.role !== 'STUDENT') || profile.role === 'TEACHER');
+      const isRejected = profile?.approval_status === 'REJECTED';
+      const isPending = !profile?.approval_status || profile?.approval_status === 'PENDING';
 
-          if (isActuallyAdmin) {
-              if (isAuthRoute) {
-                  return NextResponse.redirect(new URL('/admin/dashboard', request.url));
-              }
-              return response;
-          }
-
-          if (isActuallyTeacher && profile.school_code) {
-              if (isAuthRoute || pathname === '/welcome' || pathname.startsWith('/admin')) {
-                  return NextResponse.redirect(new URL('/dashboard', request.url));
-              }
-              return response;
-          }
-          
-          if (!profile.school_code && pathname !== '/welcome' && pathname !== '/auth/callback') {
-            return NextResponse.redirect(new URL('/welcome', request.url));
-          }
-        } else {
-            if (pathname !== '/welcome' && pathname !== '/auth/callback') {
-                return NextResponse.redirect(new URL('/welcome', request.url));
-            }
+      if (isRejected) {
+        if (pathname !== '/login') {
+          return NextResponse.redirect(new URL('/login?message=Pendaftaran+akun+Anda+ditolak+oleh+Admin+Pusat', request.url));
         }
+        return response;
+      }
+
+      if (isPending) {
+        if (pathname !== '/pending-approval' && pathname !== '/auth/callback') {
+          return NextResponse.redirect(new URL('/pending-approval', request.url));
+        }
+        return response;
+      }
+
+      // Jika sudah disetujui (APPROVED)
+      if (profile?.approval_status === 'APPROVED') {
+        if (pathname === '/pending-approval' || isAuthRoute) {
+          return NextResponse.redirect(new URL(profile.school_code ? '/dashboard' : '/welcome', request.url));
+        }
+
+        if (profile.school_code) {
+          if (pathname === '/welcome' || pathname.startsWith('/admin')) {
+            return NextResponse.redirect(new URL('/dashboard', request.url));
+          }
+          return response;
+        }
+
+        if (!profile.school_code && pathname !== '/welcome' && pathname !== '/auth/callback') {
+          return NextResponse.redirect(new URL('/welcome', request.url));
+        }
+      }
     }
   }
 

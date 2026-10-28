@@ -79,6 +79,9 @@ export interface Profile {
   email?: string;
   plan: 'TRIAL' | 'PRO';
   role: 'ADMIN' | 'TEACHER' | 'CANTINE' | 'USER' | 'STUDENT';
+  approval_status?: 'PENDING' | 'APPROVED' | 'REJECTED' | null;
+  full_name?: string | null;
+  phone_number?: string | null;
   school_name?: string | null;
   school_code?: string | null;
   custom_quota?: number | null;

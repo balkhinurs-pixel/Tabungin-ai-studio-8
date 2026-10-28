@@ -25,7 +25,7 @@ export async function login(formData: FormData) {
     const isSuperAdminEmail = signInData.user.email?.toLowerCase() === 'balkhinurs@gmail.com';
     const { data: profile } = await supabase
       .from('profiles')
-      .select('role')
+      .select('role, approval_status, school_code')
       .eq('id', signInData.user.id)
       .single();
     
@@ -33,9 +33,24 @@ export async function login(formData: FormData) {
         revalidatePath('/', 'layout');
         return redirect('/admin/dashboard');
     }
+
+    if (profile) {
+      if (profile.approval_status === 'REJECTED') {
+        await supabase.auth.signOut();
+        return redirect(`/login?message=${encodeURIComponent('Pendaftaran akun Anda ditolak oleh Admin Pusat. Silakan hubungi admin.')}`);
+      }
+
+      if (profile.approval_status === 'PENDING') {
+        revalidatePath('/', 'layout');
+        return redirect('/pending-approval');
+      }
+    }
     
     if (profile && profile.role === 'TEACHER') {
         revalidatePath('/', 'layout');
+        if (!profile.school_code) {
+          return redirect('/welcome');
+        }
         return redirect('/dashboard');
     }
   }

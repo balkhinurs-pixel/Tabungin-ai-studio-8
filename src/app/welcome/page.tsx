@@ -31,10 +31,15 @@ export default function WelcomePage() {
             setUser(authUser);
             const { data: profile } = await supabase
                 .from('profiles')
-                .select('role, school_code')
+                .select('role, school_code, approval_status')
                 .eq('id', authUser.id)
                 .maybeSingle();
             
+            if (profile?.approval_status === 'PENDING') {
+                router.replace('/pending-approval');
+                return;
+            }
+
             // Jika sudah punya kode sekolah, langsung lempar ke dashboard
             if (profile?.school_code) {
                 router.replace('/dashboard');

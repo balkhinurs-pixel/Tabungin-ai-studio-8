@@ -211,4 +211,18 @@ USING ( bucket_id = 'student-photos' );
 -- ==========================================================
 ALTER TABLE public.students 
 ADD COLUMN IF NOT EXISTS pin TEXT;
+
+-- ==========================================================
+-- 10. PERSETUJUAN & KONFIRMASI AKUN GURU BARU
+-- Menambahkan kolom status persetujuan, nama lengkap, dan nomor kontak guru
+-- ==========================================================
+ALTER TABLE public.profiles 
+ADD COLUMN IF NOT EXISTS approval_status TEXT DEFAULT 'PENDING',
+ADD COLUMN IF NOT EXISTS full_name TEXT,
+ADD COLUMN IF NOT EXISTS phone_number TEXT;
+
+-- Pastikan akun Super Admin otomatis disetujui (APPROVED)
+UPDATE public.profiles 
+SET approval_status = 'APPROVED' 
+WHERE email = 'balkhinurs@gmail.com' OR role = 'ADMIN';
 ```

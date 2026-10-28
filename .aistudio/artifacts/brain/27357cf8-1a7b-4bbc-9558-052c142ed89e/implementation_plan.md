@@ -1,36 +1,52 @@
-# Rencana & Hasil: Sinkronisasi Kolom PIN Supabase & Keamanan Data Siswa (Selesai)
+# Rencana Implementasi: Isolasi & Penguncian Transaksi Siswa Berdasarkan Kode Sekolah (Kios ATM & Kantin) [SELESAI]
 
-## Status: ✅ Berhasil Diimplementasikan & Lulus Kompilasi (Build Succeeded)
-
----
-
-## 1. Perintah SQL untuk Supabase SQL Editor
-
-Silakan salin dan jalankan perintah 1 baris berikut di **Supabase Dashboard > SQL Editor**:
-
-```sql
--- Tambahkan kolom pin ke tabel students jika belum ada
-ALTER TABLE public.students ADD COLUMN IF NOT EXISTS pin TEXT;
-```
+Seluruh fitur isolasi multi-tenant yang ketat untuk mencegah santri/siswa dari sekolah lain melakukan transaksi di Kios ATM maupun Kantin Sekolah telah berhasil diimplementasikan:
 
 ---
 
-## 2. Rincian Perubahan yang Telah Diterapkan
+## 1. Fitur yang Telah Diimplementasikan
 
-1. **Perlindungan Graceful Fallback (`src/app/(main)/profiles/actions.ts`)**:
-   - `updateStudentAction`: Jika kolom `pin` belum ada di tabel Supabase, sistem secara otomatis mengabaikan kolom `pin` pada tabel dan tetap sukses menyimpan biodata lainnya (Nama, NIS, Kelas, WA, Limit). Tidak akan muncul lagi pop-up merah *"Could not find the 'pin' column"*.
-   - Menyimpan nilai PIN ke `user_metadata` Supabase Auth (`{ user_metadata: { pin: pin } }`) sekaligus memperbarui password akun login siswa.
-   - `resetStudentPinAction`: Menyimpan PIN baru ke `user_metadata` dan ke tabel `students` dengan proteksi serupa.
-2. **Sinkronisasi Tampilan di Halaman Detail Profil (`src/app/(main)/profiles/[id]/page.tsx`)**:
-   - Sistem kini membaca PIN dari: `student.pin` ➡️ jika kosong, membaca dari `user_metadata.pin` akun autentikasi ➡️ fallback `123456`.
-   - Hasilnya, saat halaman di-refresh, nilai PIN yang sudah diganti (misal `121212` atau `555555`) langsung tampil akurat dan tidak akan kembali ke `123456`.
-3. **Sinkronisasi Daftar Siswa di Tabel (`src/app/(main)/profiles/page.tsx`)**:
-   - Menyinkronkan nilai PIN dari `user_metadata` untuk setiap siswa yang kolom `pin`-nya masih kosong, sehingga tabel siswa selalu memuat PIN aktif terkini.
-4. **Dokumentasi SQL**:
-   - Perintah penambahan kolom `pin` telah ditambahkan di bagian 9 pada file `SUPABASE_ADDITIONAL_SQL.md`.
+### A. Kios ATM Siswa (`/kiosk`) [SELESAI]
+1. **Layar Kunci Kode Sekolah Wajib (School Code Gate):**
+   - Saat Kios ATM dibuka pertama kali tanpa kode sekolah tersimpan, Kios secara otomatis mengunci pemindai dan menampilkan dialog modal wajib: *"Kunci Kios ATM Sekolah (Wajib)"*.
+   - Dialog tidak dapat ditutup/dibatalkan sebelum kode sekolah dimasukkan dan divalidasi ke database via `verifySchoolCodeAction`.
+   - Menolak kode sekolah yang salah atau tidak terdaftar di sistem dengan pesan yang jelas.
+   - Setelah diverifikasi, nama sekolah dan kode sekolah tersimpan secara persisten di penyimpanan perangkat (`localStorage`) dan Kios ATM terbuka.
+2. **Isolasi Pemindaian & Penarikan Saldo:**
+   - Header Kios ATM selalu menampilkan identitas sekolah aktif: `Sekolah: [Nama Sekolah] ([KODE])`.
+   - Disediakan tombol *"Kunci Sekolah"* untuk mengganti atau mereset sekolah terikat sewaktu-waktu.
+   - Pemindaian QR / Barcode / Input NIS manual difilter secara ketat dengan `profiles.school_code = savedSchoolCode`.
+   - Jika santri dari sekolah lain dipindai, Kios menolak dengan notifikasi tegas:
+     `"Kartu siswa berasal dari sekolah lain ([KODE]). Kios ATM ini hanya melayani [Nama Sekolah]."`
+   - Server Action `processKioskWithdrawal` memverifikasi ulang bahwa siswa yang ditarik saldonya benar-benar terdaftar di bawah `school_code` sekolah aktif.
+
+### B. Kasir Kantin Sekolah (`/cantine`) [SELESAI]
+1. **Pendeteksian Otomatis Sekolah Kantin:**
+   - Kasir kantin otomatis mendeteksi kode sekolah dan nama sekolah dari akun kantin yang sedang login melalui `getCanteenSchoolInfoAction`.
+   - Header kasir dan layar pemindaian POS menampilkan banner identitas sekolah:
+     `"Khusus Santri: [Nama Sekolah] ([KODE])"`.
+2. **Validasi & Pemblokiran Transaksi Lintas Sekolah:**
+   - Fungsi verifikasi siswa `getStudentDataForPayment` memfilter santri secara eksklusif berdasarkan `profiles.school_code = merchantSchoolCode`.
+   - Jika santri dari sekolah lain dipindai atau dimasukkan NIS-nya:
+     `"Siswa [Nama] terdaftar di [Sekolah Lain]. Kantin [Nama Sekolah] hanya melayani santri dari sekolah Anda. Transaksi ditolak."`
+   - Server Action pembayaran `processCantinePayment` melakukan verifikasi ganda di level database sebelum mendebet saldo tabungan siswa.
 
 ---
 
-## 3. Hasil Verifikasi
-- **Build**: Berhasil 100% tanpa error (`Build succeeded`).
-- **Dev Server**: Telah direstart dan berjalan normal.
+## 2. File & Modifikasi yang Diterapkan
+
+1. `src/app/kiosk/actions.ts`:
+   - Penambahan `verifySchoolCodeAction` untuk validasi kode sekolah ke tabel `profiles`.
+   - Update `getStudentKioskData`: wajib menerima `schoolCode`, menggunakan `profiles.school_code`, dan memberikan pesan informatif jika siswa terdaftar di sekolah lain.
+   - Update `processKioskWithdrawal`: verifikasi bahwa `student.profiles.school_code === schoolCode`.
+2. `src/app/kiosk/page.tsx`:
+   - Gerbang dialog wajib (School Code Gate) saat pertama kali buka kios.
+   - Indikator sekolah aktif di header Kios ATM.
+   - Validasi kecocokan kode sekolah saat pemindaian kartu dan pencarian manual.
+3. `src/app/cantine/actions.ts`:
+   - Penambahan `getCanteenSchoolInfoAction` untuk mengambil identitas sekolah akun kantin.
+   - Update `getStudentDataForPayment`: otomatis menyaring siswa berdasarkan sekolah kantin yang sedang login dan menolak santri sekolah lain.
+   - Update `processCantinePayment`: pemeriksaan integritas `merchantProfile.school_code === student.profiles.school_code`.
+4. `src/app/cantine/payment/page.tsx`:
+   - Integrasi identitas sekolah kantin pada header POS dan banner status scanner.
+   - Pengiriman `canteenSchool.schoolCode` pada proses scan dan pembayaran.

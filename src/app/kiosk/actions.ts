@@ -7,15 +7,51 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { revalidatePath } from 'next/cache';
 import { triggerSingleStudentLowBalanceWA } from '../settings/fonnte-actions';
 
-export async function getStudentKioskData(nis: string, schoolCode?: string) {
+export async function verifySchoolCodeAction(schoolCode: string) {
+  const supabaseAdmin = getSupabaseAdmin();
+  const code = schoolCode.trim().toLowerCase();
+  if (!code) {
+    return { success: false, message: 'Kode sekolah wajib diisi.' };
+  }
+
+  const { data: profile, error } = await supabaseAdmin
+    .from('profiles')
+    .select('school_code, school_name')
+    .eq('school_code', code)
+    .limit(1)
+    .maybeSingle();
+
+  if (error || !profile) {
+    return { 
+      success: false, 
+      message: `Kode sekolah "${code.toUpperCase()}" tidak ditemukan di sistem Tabungin.` 
+    };
+  }
+
+  return {
+    success: true,
+    schoolCode: profile.school_code,
+    schoolName: profile.school_name || profile.school_code.toUpperCase(),
+  };
+}
+
+export async function getStudentKioskData(nis: string, schoolCode: string) {
   const supabaseAdmin = getSupabaseAdmin();
   
   if (nis.includes('_arc_')) {
     return { success: false, message: 'Akun siswa ini telah dinonaktifkan (diarsipkan).' };
   }
+
+  const trimmedSchoolCode = schoolCode?.trim().toLowerCase();
+  if (!trimmedSchoolCode) {
+    return { 
+      success: false, 
+      message: 'Kios ATM wajib terikat dengan kode sekolah sebelum dapat digunakan.' 
+    };
+  }
   
   try {
-    let query = supabaseAdmin
+    const { data, error } = await supabaseAdmin
       .from('students')
       .select(`
         id,
@@ -29,16 +65,13 @@ export async function getStudentKioskData(nis: string, schoolCode?: string) {
           created_at
         ),
         profiles:user_id!inner (
-          school_code
+          school_code,
+          school_name
         )
       `)
-      .eq('nis', nis.trim());
-
-    if (schoolCode && schoolCode.trim()) {
-      query = query.eq('profiles.school_code', schoolCode.trim().toLowerCase());
-    }
-
-    const { data, error } = await query.maybeSingle();
+      .eq('nis', nis.trim())
+      .eq('profiles.school_code', trimmedSchoolCode)
+      .maybeSingle();
 
     if (error) {
       console.error('Kiosk Action Database Error:', error);
@@ -46,7 +79,23 @@ export async function getStudentKioskData(nis: string, schoolCode?: string) {
     }
 
     if (!data) {
-      return { success: false, message: 'Siswa tidak ditemukan di sekolah ini.' };
+      // Cek apakah NIS terdaftar di sekolah lain untuk memberi notifikasi edukatif
+      const { data: otherStudent } = await supabaseAdmin
+        .from('students')
+        .select('name, profiles:user_id!inner (school_name, school_code)')
+        .eq('nis', nis.trim())
+        .limit(1)
+        .maybeSingle();
+
+      if (otherStudent) {
+        const otherSchool = (otherStudent.profiles as any)?.school_name || (otherStudent.profiles as any)?.school_code?.toUpperCase() || 'Sekolah Lain';
+        return {
+          success: false,
+          message: `Siswa "${otherStudent.name}" terdaftar di sekolah lain (${otherSchool}). Kios ATM ini hanya melayani santri/siswa dari sekolah Anda.`
+        };
+      }
+
+      return { success: false, message: `Siswa dengan NIS "${nis.trim()}" tidak ditemukan di sekolah ini.` };
     }
 
     const balance = (data.transactions || []).reduce((acc: number, tx: any) => {
@@ -129,19 +178,21 @@ export async function processKioskWithdrawal(params: {
             return { success: false, message: 'PIN yang Anda masukkan salah.' };
         }
 
-        // 2. Verifikasi Data Siswa & Limit Harian (Ambil data segar dari DB)
+        // 2. Verifikasi Data Siswa & Limit Harian (Ambil data segar dari DB terikat kode sekolah)
         const { data: student, error: studentError } = await supabaseAdmin
             .from('students')
             .select(`
                 user_id,
                 daily_limit,
-                transactions (amount, type, created_at)
+                transactions (amount, type, created_at),
+                profiles:user_id!inner (school_code)
             `)
             .eq('id', studentId)
+            .eq('profiles.school_code', schoolCode.trim().toLowerCase())
             .single();
         
         if (studentError || !student) {
-            return { success: false, message: 'Gagal memverifikasi data siswa.' };
+            return { success: false, message: 'Verifikasi sekolah gagal. Siswa tidak terdaftar di sekolah ini.' };
         }
 
         const currentBalance = (student.transactions || []).reduce((acc: number, tx: any) => {

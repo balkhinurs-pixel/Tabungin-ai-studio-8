@@ -27,7 +27,8 @@ import {
   Coins,
   Wallet,
   UserCheck,
-  BadgeCheck
+  BadgeCheck,
+  Building2
 } from 'lucide-react';
 import jsQR from 'jsqr';
 import { useToast } from '@/hooks/use-toast';
@@ -39,7 +40,8 @@ import {
   processCantinePayment, 
   processCashPaymentAction, 
   getCanteenDailySummaryAction, 
-  getCanteenItemsAction 
+  getCanteenItemsAction,
+  getCanteenSchoolInfoAction
 } from '../actions';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
@@ -75,6 +77,12 @@ export default function CantinePOSPage() {
   const [cashChange, setCashChange] = useState(0);
   const [customerName, setCustomerName] = useState('Pembeli Umum');
 
+  // Canteen Active School (Auto-locked from logged-in canteen account)
+  const [canteenSchool, setCanteenSchool] = useState<{ schoolCode: string; schoolName: string }>({
+    schoolCode: '',
+    schoolName: ''
+  });
+
   // Payment State
   const [student, setStudent] = useState<any>(null);
   const [amount, setAmount] = useState('');
@@ -95,12 +103,19 @@ export default function CantinePOSPage() {
   // Load Menu Items & Daily Summary on Mount
   const loadData = async () => {
     setLoadingItems(true);
-    const [itemsData, summaryData] = await Promise.all([
+    const [itemsData, summaryData, schoolData] = await Promise.all([
       getCanteenItemsAction(),
-      getCanteenDailySummaryAction()
+      getCanteenDailySummaryAction(),
+      getCanteenSchoolInfoAction()
     ]);
     setCanteenItems(itemsData || []);
     if (summaryData) setDailySummary(summaryData);
+    if (schoolData && schoolData.success) {
+      setCanteenSchool({
+        schoolCode: schoolData.schoolCode || '',
+        schoolName: schoolData.schoolName || ''
+      });
+    }
     setLoadingItems(false);
   };
 
@@ -231,7 +246,7 @@ export default function CantinePOSPage() {
     if (!data.trim()) return;
     setIsProcessingQR(true);
     
-    const result = await getStudentDataForPayment(data);
+    const result = await getStudentDataForPayment(data, canteenSchool.schoolCode);
 
     if (result.success) {
         setStudent(result.data);
@@ -247,7 +262,7 @@ export default function CantinePOSPage() {
     const result = await processCantinePayment({
         studentId: student.id,
         nis: student.nis,
-        schoolCode: student.schoolCode,
+        schoolCode: student.schoolCode || canteenSchool.schoolCode,
         amount: finalAmount,
         pin: pin,
         items: posMode === 'CATALOG' ? cart.map(c => ({ id: c.id, name: c.name, qty: c.qty, price: c.price })) : undefined
@@ -408,7 +423,13 @@ export default function CantinePOSPage() {
           )}
 
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center text-orange-600 font-bold">
+            {canteenSchool.schoolName && (
+              <div className="hidden xs:flex items-center gap-1.5 px-3 py-1 bg-emerald-50 border border-emerald-200 rounded-full text-emerald-800 text-[11px] font-bold">
+                <Building2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                <span className="truncate max-w-[160px] sm:max-w-none">{canteenSchool.schoolName} ({canteenSchool.schoolCode.toUpperCase()})</span>
+              </div>
+            )}
+            <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center text-orange-600 font-bold shrink-0">
                 <Banknote className="h-4 w-4" />
             </div>
           </div>
@@ -833,6 +854,13 @@ export default function CantinePOSPage() {
                       <Banknote className="h-4 w-4" />
                       <span>Total Tagihan: Rp {finalAmount.toLocaleString('id-ID')}</span>
                   </div>
+
+                  {canteenSchool.schoolName && (
+                    <div className="bg-emerald-50 border border-emerald-200/80 text-emerald-800 px-3.5 py-1.5 rounded-xl flex items-center justify-center gap-1.5 text-[11px] font-bold w-full text-center">
+                      <Building2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                      <span>Khusus Santri: <strong className="font-extrabold">{canteenSchool.schoolName}</strong> ({canteenSchool.schoolCode.toUpperCase()})</span>
+                    </div>
+                  )}
 
                   {/* Mode Selector: DEVICE SCANNER vs KAMERA */}
                   <div className="flex items-center gap-1 bg-gray-200/80 p-1.5 rounded-2xl w-full">

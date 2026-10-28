@@ -179,37 +179,110 @@ export async function getCantineTransactionsAction(filters?: {
 }
 
 /**
+ * Mengambil informasi sekolah terkait dari akun kantin yang sedang login
+ */
+export async function getCanteenSchoolInfoAction() {
+    const supabaseUser = createClient();
+    const { data: { user } } = await supabaseUser.auth.getUser();
+    if (!user) return { success: false, message: 'Sesi berakhir.' };
+
+    const supabaseAdmin = getSupabaseAdmin();
+    const { data: profile } = await supabaseAdmin
+        .from('profiles')
+        .select('school_code, school_name')
+        .eq('id', user.id)
+        .maybeSingle();
+
+    return {
+        success: true,
+        schoolCode: profile?.school_code || '',
+        schoolName: profile?.school_name || 'Kantin Sekolah',
+    };
+}
+
+/**
  * Mengambil data ringkas siswa untuk divalidasi di layar POS kasir sebelum minta PIN.
+ * Otomatis terikat pada kode sekolah dari akun kantin yang sedang login.
  */
 export async function getStudentDataForPayment(nisInput: string, schoolCodeInput?: string) {
+    const supabaseUser = createClient();
+    const { data: { user } } = await supabaseUser.auth.getUser();
     const supabaseAdmin = getSupabaseAdmin();
+
     try {
         let nis = nisInput.trim();
-        let schoolCode = schoolCodeInput?.trim().toLowerCase() || '';
+        let embeddedSchoolCode = '';
 
         // Jika input gabungan seperti "12345,sch001"
         if (nis.includes(',')) {
             const parts = nis.split(',');
             nis = parts[0].trim();
-            schoolCode = parts[1].trim().toLowerCase();
+            embeddedSchoolCode = parts[1].trim().toLowerCase();
         }
 
+        // 1. Identifikasi sekolah akun kantin yang sedang login
+        let activeSchoolCode = schoolCodeInput?.trim().toLowerCase() || '';
+        let activeSchoolName = '';
+
+        if (user) {
+            const { data: merchantProfile } = await supabaseAdmin
+                .from('profiles')
+                .select('school_code, school_name')
+                .eq('id', user.id)
+                .maybeSingle();
+
+            if (merchantProfile?.school_code) {
+                activeSchoolCode = merchantProfile.school_code.trim().toLowerCase();
+                activeSchoolName = merchantProfile.school_name || activeSchoolCode.toUpperCase();
+            }
+        }
+
+        // Cek jika barcode memiliki kode sekolah yang berbeda dengan sekolah kantin ini
+        if (embeddedSchoolCode && activeSchoolCode && embeddedSchoolCode !== activeSchoolCode) {
+            return {
+                success: false,
+                message: `Kartu siswa berasal dari sekolah lain (${embeddedSchoolCode.toUpperCase()}). Kantin ini hanya melayani santri dari ${activeSchoolName || activeSchoolCode.toUpperCase()}.`
+            };
+        }
+
+        // 2. Query siswa dengan filter ketat kode sekolah
         let query = supabaseAdmin
             .from('students')
             .select(`
                 id, name, class, nis, daily_limit,
                 transactions (amount, type, created_at),
-                profiles:user_id!inner (school_code)
+                profiles:user_id!inner (school_code, school_name)
             `)
             .eq('nis', nis);
         
-        if (schoolCode) {
-            query = query.eq('profiles.school_code', schoolCode);
+        if (activeSchoolCode) {
+            query = query.eq('profiles.school_code', activeSchoolCode);
         }
 
         const { data, error } = await query.limit(1).maybeSingle();
         
-        if (error || !data) return { success: false, message: 'Siswa dengan NIS tersebut tidak ditemukan.' };
+        if (error || !data) {
+            // Cek apakah siswa terdaftar di sekolah lain untuk memberikan penjelasan yang jelas
+            const { data: otherStudent } = await supabaseAdmin
+                .from('students')
+                .select('name, profiles:user_id!inner (school_name, school_code)')
+                .eq('nis', nis)
+                .limit(1)
+                .maybeSingle();
+
+            if (otherStudent) {
+                const otherSchool = (otherStudent.profiles as any)?.school_name || (otherStudent.profiles as any)?.school_code?.toUpperCase() || 'Sekolah Lain';
+                return {
+                    success: false,
+                    message: `Siswa "${otherStudent.name}" terdaftar di ${otherSchool}. Kantin ${activeSchoolName || 'ini'} hanya menerima santri dari sekolah Anda.`
+                };
+            }
+
+            return { 
+                success: false, 
+                message: `Siswa dengan NIS "${nis}" tidak ditemukan di ${activeSchoolName || 'sekolah ini'}.` 
+            };
+        }
 
         const balance = (data.transactions || []).reduce((acc: number, tx: any) => {
             return acc + (tx.type === 'Pemasukan' ? tx.amount : -tx.amount);
@@ -241,7 +314,7 @@ export async function getStudentDataForPayment(nisInput: string, schoolCodeInput
                 dailyLimit: data.daily_limit,
                 remainingDailyLimit: remainingDailyLimit,
                 todaySpent: todaySpent,
-                schoolCode: (data.profiles as any)?.school_code || schoolCode
+                schoolCode: (data.profiles as any)?.school_code || activeSchoolCode
             }
         };
     } catch (err) {
@@ -523,13 +596,37 @@ export async function processCantinePayment(params: {
             }
         }
 
+        const { data: merchantProfile } = await supabaseAdmin
+            .from('profiles')
+            .select('school_code, school_name')
+            .eq('id', activeMerchant.id)
+            .single();
+
         const { data: student, error: studentError } = await supabaseAdmin
             .from('students')
-            .select('user_id, daily_limit, transactions(amount, type, created_at)')
+            .select(`
+                user_id, 
+                daily_limit, 
+                transactions(amount, type, created_at),
+                profiles:user_id!inner(school_code, school_name)
+            `)
             .eq('id', studentId)
             .single();
 
         if (studentError || !student) return { success: false, message: 'Gagal verifikasi data siswa.' };
+
+        // VALIDASI KETAT SEKOLAH: Cegah santri dari sekolah lain bertransaksi di kantin ini
+        if (merchantProfile?.school_code && (student.profiles as any)?.school_code) {
+            const merchantCode = merchantProfile.school_code.toLowerCase().trim();
+            const studentCode = ((student.profiles as any).school_code as string).toLowerCase().trim();
+            if (merchantCode !== studentCode) {
+                const schoolName = merchantProfile.school_name || merchantCode.toUpperCase();
+                return { 
+                    success: false, 
+                    message: `PEMBAYARAN DITOLAK. Siswa bukan santri dari ${schoolName}. Kantin ini hanya melayani santri terdaftar.` 
+                };
+            }
+        }
 
         const currentBalance = (student.transactions || []).reduce((acc: number, tx: any) => {
             return acc + (tx.type === 'Pemasukan' ? tx.amount : -tx.amount);
@@ -560,12 +657,6 @@ export async function processCantinePayment(params: {
                 };
             }
         }
-
-        const { data: merchantProfile } = await supabaseAdmin
-            .from('profiles')
-            .select('school_name')
-            .eq('id', activeMerchant.id)
-            .single();
 
         const merchantDisplayName = merchantProfile?.school_name || activeMerchant.email?.split('@')[0].toUpperCase() || 'KANTIN';
 

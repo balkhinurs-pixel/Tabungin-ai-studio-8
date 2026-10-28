@@ -32,7 +32,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
-import { getStudentKioskData, processKioskWithdrawal } from './actions';
+import { getStudentKioskData, processKioskWithdrawal, verifySchoolCodeAction } from './actions';
 import KioskSettlementModal from './components/KioskSettlementModal';
 
 type KioskState = 'SCANNING' | 'MAIN_MENU' | 'PIN_INPUT' | 'WITHDRAW_MENU' | 'CUSTOM_AMOUNT' | 'REASON_SELECTION' | 'PROCESSING' | 'SUCCESS' | 'ERROR';
@@ -81,8 +81,11 @@ export default function KioskPage() {
 
   // Persistent Kiosk School Code filter
   const [savedSchoolCode, setSavedSchoolCode] = useState('');
+  const [savedSchoolName, setSavedSchoolName] = useState('');
   const [isSchoolCodeModalOpen, setIsSchoolCodeModalOpen] = useState(false);
   const [tempSchoolCodeInput, setTempSchoolCodeInput] = useState('');
+  const [isVerifyingCode, setIsVerifyingCode] = useState(false);
+  const [schoolCodeError, setSchoolCodeError] = useState('');
 
   // Load persistent scan mode & school code from localStorage
   useEffect(() => {
@@ -91,26 +94,61 @@ export default function KioskPage() {
       setActiveScanMode(savedMode);
     }
     const savedCode = localStorage.getItem('kiosk_school_code');
+    const savedName = localStorage.getItem('kiosk_school_name');
     if (savedCode) {
       setSavedSchoolCode(savedCode.trim().toLowerCase());
+      setSavedSchoolName(savedName || savedCode.toUpperCase());
+    } else {
+      // Wajibkan input kode sekolah jika belum tersimpan
+      setIsSchoolCodeModalOpen(true);
     }
   }, []);
 
-  const handleSaveSchoolCode = (code: string) => {
-    const trimmed = code.trim().toLowerCase();
-    setSavedSchoolCode(trimmed);
-    if (trimmed) {
-      localStorage.setItem('kiosk_school_code', trimmed);
-    } else {
-      localStorage.removeItem('kiosk_school_code');
+  const handleVerifyAndSaveSchoolCode = async (codeToVerify: string) => {
+    const trimmed = codeToVerify.trim().toLowerCase();
+    if (!trimmed) {
+      setSchoolCodeError('Silakan masukkan kode sekolah terlebih dahulu.');
+      return;
     }
-    setIsSchoolCodeModalOpen(false);
-    toast({
-      title: trimmed ? "Filter Kode Sekolah Tersimpan" : "Filter Kode Sekolah Dihapus",
-      description: trimmed 
-        ? `Kios sekarang terikat khusus ke sekolah dengan kode: ${trimmed.toUpperCase()}` 
-        : "Pencarian siswa sekarang mencakup seluruh database.",
-    });
+
+    setSchoolCodeError('');
+    setIsVerifyingCode(true);
+
+    try {
+      const result = await verifySchoolCodeAction(trimmed);
+      if (result.success && result.schoolCode) {
+        const verifiedCode = result.schoolCode.toLowerCase();
+        const verifiedName = result.schoolName || verifiedCode.toUpperCase();
+
+        setSavedSchoolCode(verifiedCode);
+        setSavedSchoolName(verifiedName);
+        localStorage.setItem('kiosk_school_code', verifiedCode);
+        localStorage.setItem('kiosk_school_name', verifiedName);
+
+        setIsSchoolCodeModalOpen(false);
+        setTempSchoolCodeInput('');
+        toast({
+          title: "Kios ATM Berhasil Terikat",
+          description: `Kios sekarang melayani santri/siswa dari ${verifiedName}.`,
+        });
+      } else {
+        setSchoolCodeError(result.message || 'Kode sekolah tidak ditemukan di sistem.');
+      }
+    } catch {
+      setSchoolCodeError('Terjadi kesalahan saat memverifikasi kode sekolah.');
+    } finally {
+      setIsVerifyingCode(false);
+    }
+  };
+
+  const handleResetSchoolCode = () => {
+    setSavedSchoolCode('');
+    setSavedSchoolName('');
+    localStorage.removeItem('kiosk_school_code');
+    localStorage.removeItem('kiosk_school_name');
+    setTempSchoolCodeInput('');
+    setSchoolCodeError('');
+    setIsSchoolCodeModalOpen(true);
   };
 
   const handleModeChange = (mode: 'DEVICE' | 'CAMERA') => {
@@ -518,20 +556,37 @@ export default function KioskPage() {
         return;
     }
 
+    if (!savedSchoolCode) {
+        setIsSchoolCodeModalOpen(true);
+        setTimeout(() => { processingRef.current = false; setIsCashcowReading(false); }, 1000);
+        toast({
+            title: "Kode Sekolah Belum Diatur",
+            description: "Wajib memasukkan kode sekolah sebelum Kios ATM dapat digunakan.",
+            variant: "destructive"
+        });
+        return;
+    }
+
     let nis = '';
-    let schoolCode = '';
+    let schoolCode = savedSchoolCode;
 
     if (data.includes(',')) {
         const parts = data.split(',');
         nis = parts[0]?.trim() || '';
-        schoolCode = parts[1]?.trim() || '';
+        const embeddedSchoolCode = parts[1]?.trim().toLowerCase() || '';
+        if (embeddedSchoolCode && embeddedSchoolCode !== savedSchoolCode) {
+            playBeep('error');
+            setIsCashcowReading(false);
+            setTimeout(() => { processingRef.current = false; }, 2500);
+            toast({
+                title: "Sekolah Tidak Sesuai",
+                description: `Kartu siswa berasal dari sekolah lain (${embeddedSchoolCode.toUpperCase()}). Kios ATM ini hanya melayani ${savedSchoolName || savedSchoolCode.toUpperCase()}.`,
+                variant: "destructive"
+            });
+            return;
+        }
     } else {
         nis = data;
-        schoolCode = savedSchoolCode;
-    }
-
-    if (!schoolCode && savedSchoolCode) {
-        schoolCode = savedSchoolCode;
     }
 
     if (!nis) {
@@ -713,7 +768,7 @@ export default function KioskPage() {
                             "font-black text-[10px] sm:text-[11px] rounded-full h-8 sm:h-10 px-2.5 sm:px-4 border shadow-sm flex items-center gap-1.5 transition-all",
                             savedSchoolCode 
                                 ? "bg-blue-500/10 border-blue-500/30 text-blue-400 hover:bg-blue-500/20" 
-                                : "bg-amber-500/10 border-amber-500/30 text-amber-400 hover:bg-amber-500/20 animate-pulse"
+                                : "bg-amber-500/15 border-amber-500/40 text-amber-300 hover:bg-amber-500/25 animate-pulse"
                         )} 
                         onClick={() => {
                             setTempSchoolCodeInput(savedSchoolCode);
@@ -723,8 +778,8 @@ export default function KioskPage() {
                         <Building2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" /> 
                         <span>
                             {savedSchoolCode 
-                                ? <span><span className="hidden sm:inline">Sekolah: </span><span className="uppercase font-extrabold">{savedSchoolCode}</span></span>
-                                : <span><span className="hidden sm:inline">Filter </span>Kode Sekolah</span>
+                                ? <span><span className="hidden sm:inline">Sekolah: </span><span className="font-extrabold">{savedSchoolName || savedSchoolCode.toUpperCase()}</span></span>
+                                : <span>Kunci Sekolah (Wajib)</span>
                             }
                         </span>
                     </Button>
@@ -1337,69 +1392,118 @@ export default function KioskPage() {
           onClose={() => setIsSettlementOpen(false)} 
         />
 
-        {/* Modal Filter Kode Sekolah Kiosk */}
+        {/* Modal Kunci & Verifikasi Kode Sekolah Kios (Wajib) */}
         {isSchoolCodeModalOpen && (
-          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
-            <div className="bg-slate-900 border border-slate-700 rounded-2xl sm:rounded-3xl w-full max-w-md text-white p-5 space-y-4 shadow-2xl">
+          <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="bg-slate-900 border border-slate-700 rounded-2xl sm:rounded-3xl w-full max-w-md text-white p-6 space-y-5 shadow-2xl">
               <div className="flex justify-between items-center border-b border-slate-800 pb-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="h-9 w-9 rounded-xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-blue-400 shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-blue-400 shrink-0">
                     <Building2 className="h-5 w-5" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-black text-white">Filter Kode Sekolah Kios</h3>
-                    <p className="text-[10px] text-slate-400 font-medium">Isolasi data & cegah bentrok NIS siswa</p>
+                    <h3 className="text-base font-black text-white">
+                      {savedSchoolCode ? "Pengaturan Sekolah Kios" : "Kunci Kios ATM Sekolah (Wajib)"}
+                    </h3>
+                    <p className="text-[11px] text-slate-400 font-medium">
+                      {savedSchoolCode 
+                        ? `Saat ini terikat ke ${savedSchoolName || savedSchoolCode.toUpperCase()}`
+                        : "Wajib masukkan kode sekolah sebelum scan dapat digunakan"}
+                    </p>
                   </div>
                 </div>
-                <Button variant="ghost" size="icon" onClick={() => setIsSchoolCodeModalOpen(false)} className="rounded-full h-8 w-8 text-slate-400 hover:text-white">
-                  <XCircle className="h-5 w-5" />
-                </Button>
+                {savedSchoolCode && (
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    onClick={() => { setIsSchoolCodeModalOpen(false); setSchoolCodeError(''); }} 
+                    className="rounded-full h-8 w-8 text-slate-400 hover:text-white"
+                  >
+                    <XCircle className="h-5 w-5" />
+                  </Button>
+                )}
               </div>
 
-              <div className="space-y-3">
+              <form 
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleVerifyAndSaveSchoolCode(tempSchoolCodeInput);
+                }} 
+                className="space-y-4"
+              >
                 <p className="text-xs text-slate-300 font-medium leading-relaxed">
-                  Atur Kode Sekolah di mana perangkat ATM Kios ini beroperasi. Setelah disimpan, semua pencarian & pemindaian NIS secara otomatis terfilter khusus untuk sekolah tersebut.
+                  {savedSchoolCode ? (
+                    <span>
+                      Kios ini saat ini terhubung khusus ke <strong>{savedSchoolName || savedSchoolCode.toUpperCase()}</strong>. Transaksi siswa dari sekolah lain otomatis diblokir.
+                    </span>
+                  ) : (
+                    <span>
+                      Demi keamanan saldo tabungan, setiap perangkat Kios ATM wajib dihubungkan ke satu sekolah. Masukkan kode sekolah unik yang terdaftar pada akun guru.
+                    </span>
+                  )}
                 </p>
 
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase text-slate-400">Kode Sekolah (Contoh: SCH001 / SMPN1)</label>
+                {schoolCodeError && (
+                  <div className="bg-rose-500/10 border border-rose-500/30 text-rose-300 px-3.5 py-2.5 rounded-xl text-xs flex items-start gap-2">
+                    <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-rose-400" />
+                    <span>{schoolCodeError}</span>
+                  </div>
+                )}
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                    Kode Sekolah (Contoh: SMPIT01 / SDALIKHLAS)
+                  </label>
                   <input 
                     type="text" 
                     value={tempSchoolCodeInput} 
-                    onChange={(e) => setTempSchoolCodeInput(e.target.value)} 
-                    placeholder="Masukkan kode sekolah..." 
-                    className="w-full h-11 bg-slate-950 border border-slate-700 rounded-xl px-3 text-white font-mono font-bold text-sm focus:outline-none focus:border-blue-500 uppercase"
+                    onChange={(e) => {
+                      setTempSchoolCodeInput(e.target.value);
+                      if (schoolCodeError) setSchoolCodeError('');
+                    }} 
+                    placeholder="Ketik kode sekolah..." 
+                    className="w-full h-12 bg-slate-950 border border-slate-700 rounded-xl px-3.5 text-white font-mono font-bold text-sm focus:outline-none focus:border-blue-500 uppercase tracking-widest"
                     autoFocus
+                    required
                   />
                 </div>
 
                 <div className="bg-slate-950/60 border border-slate-800 p-3 rounded-xl text-[11px] text-slate-400 space-y-1">
-                  <p className="font-bold text-slate-200">✨ Manfaat Utama Penguncian Kode Sekolah:</p>
-                  <p>• Mencegah siswa dari sekolah lain tertukar jika NIS-nya sama.</p>
-                  <p>• Siswa & penjaga tidak perlu mengetik kode sekolah berulang kali.</p>
-                  <p>• Data transaksi & rekap laci kasir otomatis terisolasi aman.</p>
+                  <p className="font-bold text-slate-200">🛡️ Proteksi Multi-Tenant Aktif:</p>
+                  <p>• Hanya santri/siswa dari sekolah ini yang diizinkan bertransaksi.</p>
+                  <p>• Kartu atau NIS santri dari sekolah lain otomatis ditolak sistem.</p>
                 </div>
-              </div>
 
-              <div className="flex gap-2 pt-2">
-                {savedSchoolCode && (
+                <div className="flex gap-2.5 pt-2">
+                  {savedSchoolCode && (
+                    <Button 
+                      type="button"
+                      variant="outline" 
+                      onClick={handleResetSchoolCode} 
+                      className="border-rose-500/30 bg-rose-500/10 text-rose-300 text-xs font-bold h-11 rounded-xl hover:bg-rose-500/20"
+                    >
+                      Reset Sekolah
+                    </Button>
+                  )}
                   <Button 
-                    type="button"
-                    variant="outline" 
-                    onClick={() => handleSaveSchoolCode('')} 
-                    className="border-slate-700 bg-slate-800 text-slate-300 text-xs font-bold h-10 rounded-xl hover:bg-slate-700"
+                    type="submit"
+                    disabled={isVerifyingCode || !tempSchoolCodeInput.trim()} 
+                    className="flex-1 bg-blue-600 hover:bg-blue-500 text-white text-xs font-black h-11 rounded-xl shadow-lg flex items-center justify-center gap-2"
                   >
-                    Hapus Filter
+                    {isVerifyingCode ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span>Memverifikasi Kode...</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="h-4 w-4" />
+                        <span>{savedSchoolCode ? "Simpan Perubahan Sekolah" : "Verifikasi & Buka Kios ATM"}</span>
+                      </>
+                    )}
                   </Button>
-                )}
-                <Button 
-                  type="button"
-                  onClick={() => handleSaveSchoolCode(tempSchoolCodeInput)} 
-                  className="flex-1 bg-blue-600 hover:bg-blue-500 text-white text-xs font-black h-10 rounded-xl shadow-lg"
-                >
-                  Simpan & Lock Kode Sekolah
-                </Button>
-              </div>
+                </div>
+              </form>
             </div>
           </div>
         )}

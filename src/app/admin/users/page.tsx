@@ -26,8 +26,8 @@ export default async function AdminUsersPage() {
     return (
         <div className="space-y-6">
             <div className="flex flex-col gap-1">
-              <h1 className="text-3xl font-bold tracking-tight">Manajemen Pengguna</h1>
-              <p className="text-muted-foreground">Kelola hak akses, plan premium, dan kuota siswa untuk semua guru.</p>
+              <h1 className="text-3xl font-bold tracking-tight">Manajemen Pengguna & Guru</h1>
+              <p className="text-muted-foreground">Persetujuan pendaftaran akun guru baru, verifikasi sekolah, plan premium, dan kuota siswa.</p>
             </div>
 
             <UserListClient initialUsers={users} />
