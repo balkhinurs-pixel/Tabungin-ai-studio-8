@@ -7,7 +7,9 @@ import AdminTransactionsClient, { AdminTransactionItem } from './AdminTransactio
 interface PageProps {
   searchParams?: {
     userId?: string;
-  } | Promise<{ userId?: string }>;
+    studentId?: string;
+    studentName?: string;
+  } | Promise<{ userId?: string; studentId?: string; studentName?: string }>;
 }
 
 async function getAdminTransactionsData() {
@@ -89,16 +91,18 @@ async function getAdminTransactionsData() {
 export default async function AdminTransactionsPage(props: PageProps) {
   const resolvedParams = props.searchParams instanceof Promise ? await props.searchParams : props.searchParams;
   const initialTeacherId = resolvedParams?.userId || 'all';
+  const initialStudentId = resolvedParams?.studentId || 'all';
+  const initialStudentName = resolvedParams?.studentName || '';
   const { transactions, teachers } = await getAdminTransactionsData();
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-1">
         <h1 className="text-3xl font-black tracking-tight text-foreground">
-          Pantau & Edit Transaksi Guru
+          Daftar Transaksi Siswa
         </h1>
         <p className="text-muted-foreground text-sm">
-          Pusat kendali inspeksi transaksi keuangan: pantau seluruh mutasi kas santri di setiap sekolah/guru terdaftar, dan lakukan koreksi/edit nominal jika terjadi kesalahan input.
+          Pusat pemantauan & audit mutasi tabungan santri/siswa seluruh sekolah: periksa aliran setoran, penarikan, belanja kantin, dan lakukan koreksi data bila diperlukan.
         </p>
       </div>
 
@@ -106,6 +110,8 @@ export default async function AdminTransactionsPage(props: PageProps) {
         initialTransactions={transactions}
         teachers={teachers}
         initialSelectedTeacherId={initialTeacherId}
+        initialSelectedStudentId={initialStudentId}
+        initialStudentName={initialStudentName}
       />
     </div>
   );

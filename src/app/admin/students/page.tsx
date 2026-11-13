@@ -43,7 +43,10 @@ async function getAdminStudentBalancesData() {
       transactions (
         id,
         type,
-        amount
+        amount,
+        category,
+        description,
+        created_at
       )
     `)
     .order('name', { ascending: true });
@@ -84,6 +87,14 @@ async function getAdminStudentBalancesData() {
       total_income: totalIncome,
       total_expense: totalExpense,
       transaction_count: txList.length,
+      transactions: (txList || []).map((tx: any) => ({
+        id: tx.id,
+        type: tx.type,
+        amount: Number(tx.amount) || 0,
+        category: tx.category || 'Umum',
+        description: tx.description || '',
+        created_at: tx.created_at,
+      })),
     };
   });
 

@@ -6,13 +6,35 @@ import { Button } from "@/components/ui/button";
 import { Users, Key, Receipt, ArrowRight, TrendingUp, TrendingDown, ShieldCheck, Wallet, GraduationCap } from "lucide-react";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { format } from "date-fns";
+import { id as idLocale } from "date-fns/locale";
+
+export interface DashboardRecentTransaction {
+  id: string;
+  amount: number;
+  type: 'Pemasukan' | 'Pengeluaran';
+  category: string;
+  description: string;
+  created_at: string;
+  student?: {
+    id: string;
+    name: string;
+    nis: string;
+    class: string;
+    user_id: string;
+  } | null;
+  school_name: string;
+}
+
 async function getStats() {
     const supabaseAdmin = getSupabaseAdmin();
     
     // 1. Profiles
     const { data: profiles, error } = await supabaseAdmin
         .from('profiles')
-        .select('id, plan, role')
+        .select('id, plan, role, school_name, email')
         .not('email', 'like', '%.supabase.user');
 
     if (error) {
@@ -24,12 +46,18 @@ async function getStats() {
           totalIncome: 0, 
           totalExpense: 0,
           totalStudents: 0,
-          netBalance: 0
+          netBalance: 0,
+          recentTransactions: [] as DashboardRecentTransaction[],
         };
     }
 
     const totalUsers = profiles?.length || 0;
     const proUsers = profiles?.filter(p => p.plan === 'PRO').length || 0;
+
+    const profileMap = new Map<string, { school_name?: string; email?: string }>();
+    (profiles || []).forEach((p) => {
+      profileMap.set(p.id, { school_name: p.school_name, email: p.email });
+    });
 
     // 2. Transactions
     const { data: transactions, error: txError } = await supabaseAdmin
@@ -57,6 +85,46 @@ async function getStats() {
     const totalStudents = studentCount || 0;
     const netBalance = totalIncome - totalExpense;
 
+    // 4. Recent Student Transactions
+    const { data: rawRecentTxs, error: recentError } = await supabaseAdmin
+      .from('transactions')
+      .select(`
+        id,
+        amount,
+        type,
+        category,
+        description,
+        created_at,
+        students (
+          id,
+          name,
+          nis,
+          class,
+          user_id
+        )
+      `)
+      .order('created_at', { ascending: false })
+      .limit(8);
+
+    if (recentError) {
+      console.error("Error fetching recent transactions:", recentError);
+    }
+
+    const recentTransactions: DashboardRecentTransaction[] = (rawRecentTxs || []).map((tx: any) => {
+      const studentData = Array.isArray(tx.students) ? tx.students[0] : tx.students;
+      const schoolProfile = studentData?.user_id ? profileMap.get(studentData.user_id) : null;
+      return {
+        id: tx.id,
+        amount: Number(tx.amount) || 0,
+        type: tx.type,
+        category: tx.category || 'Umum',
+        description: tx.description || '',
+        created_at: tx.created_at,
+        student: studentData || null,
+        school_name: schoolProfile?.school_name || schoolProfile?.email || 'Umum',
+      };
+    });
+
     return { 
       totalUsers, 
       proUsers, 
@@ -64,7 +132,8 @@ async function getStats() {
       totalIncome, 
       totalExpense,
       totalStudents,
-      netBalance
+      netBalance,
+      recentTransactions,
     };
 }
 
@@ -237,6 +306,107 @@ export default async function AdminDashboard() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Recent Student Transactions Section */}
+        <Card className="border shadow-sm overflow-hidden bg-card">
+          <CardHeader className="p-5 pb-3 border-b bg-muted/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <CardTitle className="text-lg font-black text-foreground flex items-center gap-2">
+                <Receipt className="h-5 w-5 text-indigo-600" />
+                Transaksi Siswa Terkini (Lintas Sekolah)
+              </CardTitle>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Audit aktivitas transaksi tabungan santri secara real-time dari seluruh instansi.
+              </p>
+            </div>
+            <Button asChild variant="outline" size="sm" className="gap-1.5 font-bold shrink-0">
+              <Link href="/admin/transactions">
+                Lihat Seluruh Transaksi Siswa
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </Button>
+          </CardHeader>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader className="bg-muted/40">
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="w-36 text-xs font-bold uppercase tracking-wider">Waktu</TableHead>
+                  <TableHead className="text-xs font-bold uppercase tracking-wider">Siswa</TableHead>
+                  <TableHead className="text-xs font-bold uppercase tracking-wider">Sekolah / Akun</TableHead>
+                  <TableHead className="w-28 text-xs font-bold uppercase tracking-wider">Tipe</TableHead>
+                  <TableHead className="text-xs font-bold uppercase tracking-wider">Kategori & Keterangan</TableHead>
+                  <TableHead className="w-36 text-right text-xs font-bold uppercase tracking-wider">Nominal</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {stats.recentTransactions.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center py-10 text-muted-foreground text-sm">
+                      Belum ada transaksi siswa yang tercatat di database.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  stats.recentTransactions.map((tx) => {
+                    const isIncome = tx.type === 'Pemasukan';
+                    const txDate = tx.created_at ? new Date(tx.created_at) : new Date();
+
+                    return (
+                      <TableRow key={tx.id} className="hover:bg-muted/30 transition-colors text-xs">
+                        <TableCell className="font-mono text-muted-foreground whitespace-nowrap">
+                          {format(txDate, 'dd/MM/yyyy HH:mm', { locale: idLocale })}
+                        </TableCell>
+                        <TableCell>
+                          {tx.student ? (
+                            <Link
+                              href={`/admin/transactions?studentId=${tx.student.id}&studentName=${encodeURIComponent(tx.student.name)}`}
+                              className="font-bold text-foreground hover:text-primary transition-colors hover:underline block"
+                              title="Filter transaksi untuk siswa ini"
+                            >
+                              {tx.student.name}
+                              <span className="text-[11px] font-mono text-muted-foreground ml-1.5 font-normal">
+                                ({tx.student.nis || '-'})
+                              </span>
+                            </Link>
+                          ) : (
+                            <span className="text-muted-foreground italic">Siswa telah dihapus</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="font-medium text-foreground truncate max-w-[180px]" title={tx.school_name}>
+                          {tx.school_name}
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant="outline"
+                            className={`text-[10px] px-2 py-0 font-bold ${
+                              isIncome
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-400'
+                                : 'bg-rose-50 text-rose-700 border-rose-300 dark:bg-rose-950/40 dark:text-rose-400'
+                            }`}
+                          >
+                            {tx.type}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <span className="font-semibold text-foreground">{tx.category || 'Umum'}</span>
+                          {tx.description && (
+                            <span className="text-muted-foreground text-[11px] block truncate max-w-[220px]">
+                              {tx.description}
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right font-mono font-black tabular-nums text-sm">
+                          <span className={isIncome ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
+                            {isIncome ? '+' : '-'} {formatCurrency(tx.amount)}
+                          </span>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </Card>
     </div>
   )
 }

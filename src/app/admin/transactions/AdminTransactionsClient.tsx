@@ -31,7 +31,10 @@ import {
   Building2,
   Calendar,
   RefreshCw,
-  AlertTriangle
+  AlertTriangle,
+  Download,
+  User,
+  X
 } from 'lucide-react';
 import { format, parseISO, isToday, subDays } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
@@ -65,15 +68,21 @@ interface AdminTransactionsClientProps {
   initialTransactions: AdminTransactionItem[];
   teachers: Profile[];
   initialSelectedTeacherId?: string;
+  initialSelectedStudentId?: string;
+  initialStudentName?: string;
 }
 
 export default function AdminTransactionsClient({
   initialTransactions,
   teachers,
   initialSelectedTeacherId = 'all',
+  initialSelectedStudentId = 'all',
+  initialStudentName = '',
 }: AdminTransactionsClientProps) {
   const [transactions, setTransactions] = useState<AdminTransactionItem[]>(initialTransactions);
   const [selectedTeacherId, setSelectedTeacherId] = useState<string>(initialSelectedTeacherId);
+  const [selectedStudentId, setSelectedStudentId] = useState<string>(initialSelectedStudentId);
+  const [selectedStudentName, setSelectedStudentName] = useState<string>(initialStudentName);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'Pemasukan' | 'Pengeluaran'>('all');
   const [filterTimeRange, setFilterTimeRange] = useState<'all' | 'today' | '7days' | '30days'>('all');
@@ -98,6 +107,12 @@ export default function AdminTransactionsClient({
   // Filter transactions
   const filteredTransactions = useMemo(() => {
     return transactions.filter((tx) => {
+      // Student filter
+      if (selectedStudentId !== 'all') {
+        const matchId = tx.student_id === selectedStudentId || tx.student?.id === selectedStudentId;
+        if (!matchId) return false;
+      }
+
       // Teacher filter
       if (selectedTeacherId !== 'all') {
         const txOwner = tx.student?.user_id || tx.user_id;
@@ -150,7 +165,51 @@ export default function AdminTransactionsClient({
 
       return true;
     });
-  }, [transactions, selectedTeacherId, filterType, filterCategory, filterTimeRange, searchQuery]);
+  }, [transactions, selectedStudentId, selectedTeacherId, filterType, filterCategory, filterTimeRange, searchQuery]);
+
+  // Export CSV for filtered transactions
+  const handleExportCSV = () => {
+    const headers = [
+      'No',
+      'Tanggal/Waktu',
+      'NIS',
+      'Nama Siswa',
+      'Kelas',
+      'Sekolah/Pengelola',
+      'Kategori',
+      'Jenis',
+      'Nominal (IDR)',
+      'Keterangan',
+    ];
+    const rows = filteredTransactions.map((tx, idx) => {
+      const txDate = tx.created_at ? parseISO(tx.created_at) : new Date();
+      const formattedDate = format(txDate, 'dd-MM-yyyy HH:mm:ss');
+      return [
+        idx + 1,
+        `"${formattedDate}"`,
+        `"${tx.student?.nis || '-'}"`,
+        `"${(tx.student?.name || 'Siswa').replace(/"/g, '""')}"`,
+        `"${tx.student?.class || '-'}"`,
+        `"${(tx.teacherSchoolName || tx.teacherEmail || 'Umum').replace(/"/g, '""')}"`,
+        `"${tx.category || 'TABUNGAN'}"`,
+        `"${tx.type}"`,
+        tx.amount,
+        `"${(tx.description || '').replace(/"/g, '""')}"`,
+      ];
+    });
+
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    const fileName = selectedStudentName
+      ? `transaksi_${selectedStudentName.toLowerCase().replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.csv`
+      : `transaksi_siswa_admin_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.setAttribute('download', fileName);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   // Aggregate stats
   const stats = useMemo(() => {
@@ -334,24 +393,53 @@ export default function AdminTransactionsClient({
             </div>
           </div>
 
-          {/* Search Bar */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Cari berdasarkan nama santri, NIS, kelas, keterangan transaksi, atau email guru..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 h-10"
-            />
-            {searchQuery && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="absolute right-1 top-1/2 -translate-y-1/2 h-7 px-2 text-xs"
-                onClick={() => setSearchQuery('')}
-              >
-                Reset
-              </Button>
+          {/* Search Bar & Active Filters */}
+          <div className="space-y-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Cari berdasarkan nama santri, NIS, kelas, keterangan transaksi, atau email guru..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 h-10"
+              />
+              {searchQuery && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 h-7 px-2 text-xs"
+                  onClick={() => setSearchQuery('')}
+                >
+                  Reset
+                </Button>
+              )}
+            </div>
+
+            {/* Banner Khusus Filter Siswa Tertentu */}
+            {selectedStudentId !== 'all' && (
+              <div className="bg-emerald-500/10 border border-emerald-500/30 p-3 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-semibold text-emerald-800 dark:text-emerald-300">
+                <div className="flex items-center gap-2">
+                  <User className="h-4 w-4 text-emerald-600 shrink-0" />
+                  <span>
+                    Memfilter mutasi khusus siswa:{' '}
+                    <strong className="text-foreground text-sm font-black underline decoration-emerald-500">
+                      {selectedStudentName || 'Siswa Terpilih'}
+                    </strong>
+                  </span>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setSelectedStudentId('all');
+                    setSelectedStudentName('');
+                  }}
+                  className="h-7 text-xs gap-1 border-emerald-500/30 hover:bg-emerald-500/20 text-foreground w-fit"
+                >
+                  <X className="h-3.5 w-3.5" />
+                  Tampilkan Semua Siswa
+                </Button>
+              </div>
             )}
           </div>
         </CardContent>
@@ -416,14 +504,27 @@ export default function AdminTransactionsClient({
 
       {/* Transactions Table */}
       <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
-        <div className="p-4 border-b bg-muted/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div className="p-4 border-b bg-muted/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h2 className="text-base font-bold text-foreground">Daftar Transaksi Sekolah / Guru</h2>
+            <h2 className="text-base font-bold text-foreground flex items-center gap-2">
+              <Receipt className="h-4 w-4 text-emerald-600" />
+              Daftar Transaksi Siswa (Semua Sekolah)
+            </h2>
             <p className="text-xs text-muted-foreground">
               Menampilkan {filteredTransactions.length} dari total {transactions.length} transaksi yang tercatat di sistem pusat.
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExportCSV}
+              className="h-8 font-bold text-xs gap-1.5 shadow-sm"
+              title="Unduh data transaksi terpilih dalam format CSV"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Export CSV
+            </Button>
             <Badge variant="outline" className="text-xs font-medium">
               Mode: Super Admin (Read & Write)
             </Badge>

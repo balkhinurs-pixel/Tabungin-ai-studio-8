@@ -1,22 +1,38 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import Link from 'next/link';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
 import { 
   Search, 
   Wallet, 
   Building2, 
   Users, 
   TrendingUp, 
+  TrendingDown,
   ArrowUpDown,
   Download,
   RotateCcw,
-  GraduationCap
+  GraduationCap,
+  Receipt,
+  ExternalLink,
+  Eye,
+  Calendar
 } from 'lucide-react';
+import { format } from 'date-fns';
+import { id as idLocale } from 'date-fns/locale';
 import type { Profile } from '@/types';
 
 export interface AdminStudentBalanceItem {
@@ -31,6 +47,14 @@ export interface AdminStudentBalanceItem {
   total_income: number;
   total_expense: number;
   transaction_count: number;
+  transactions?: Array<{
+    id: string;
+    type: 'Pemasukan' | 'Pengeluaran';
+    amount: number;
+    category?: string;
+    description?: string;
+    created_at: string;
+  }>;
 }
 
 interface StudentBalancesClientProps {
@@ -47,6 +71,7 @@ export default function StudentBalancesClient({
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTeacherId, setSelectedTeacherId] = useState<string>(initialTeacherId);
   const [sortOption, setSortOption] = useState<'name_asc' | 'balance_desc' | 'balance_asc' | 'class_asc'>('name_asc');
+  const [selectedStudentForDetail, setSelectedStudentForDetail] = useState<AdminStudentBalanceItem | null>(null);
 
   // Format currency IDR
   const formatIDR = (val: number) => {
@@ -333,13 +358,14 @@ export default function StudentBalancesClient({
                 <TableHead className="text-xs font-bold uppercase tracking-wider">Nama Siswa</TableHead>
                 <TableHead className="w-28 text-xs font-bold uppercase tracking-wider">Kelas</TableHead>
                 <TableHead className="text-xs font-bold uppercase tracking-wider">Sekolah / Akun</TableHead>
-                <TableHead className="w-40 text-right text-xs font-bold uppercase tracking-wider">Sisa Saldo</TableHead>
+                <TableHead className="w-36 text-right text-xs font-bold uppercase tracking-wider">Sisa Saldo</TableHead>
+                <TableHead className="w-36 text-center text-xs font-bold uppercase tracking-wider">Aksi Transaksi</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredStudents.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-12 text-muted-foreground">
+                  <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <GraduationCap className="h-8 w-8 text-muted-foreground/50" />
                       <p className="font-semibold text-sm">Tidak ada data siswa ditemukan</p>
@@ -406,6 +432,36 @@ export default function StudentBalancesClient({
                           {formatIDR(student.balance)}
                         </span>
                       </TableCell>
+
+                      {/* 7. Aksi Transaksi */}
+                      <TableCell className="text-center">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => setSelectedStudentForDetail(student)}
+                            className="h-8 px-2.5 text-xs font-bold gap-1 shadow-xs"
+                            title="Lihat rincian transaksi siswa ini"
+                          >
+                            <Receipt className="h-3.5 w-3.5 text-primary" />
+                            <span>Riwayat</span>
+                            <span className="text-[10px] bg-background text-muted-foreground px-1.5 py-0.2 rounded-full border">
+                              {student.transaction_count}
+                            </span>
+                          </Button>
+                          <Button
+                            asChild
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                            title="Buka di halaman Transaksi Siswa"
+                          >
+                            <Link href={`/admin/transactions?studentId=${student.id}&studentName=${encodeURIComponent(student.name)}`}>
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </Link>
+                          </Button>
+                        </div>
+                      </TableCell>
                     </TableRow>
                   );
                 })
@@ -414,6 +470,152 @@ export default function StudentBalancesClient({
           </Table>
         </div>
       </Card>
+
+      {/* Detail Dialog: Transaksi Siswa */}
+      <Dialog open={!!selectedStudentForDetail} onOpenChange={(open) => !open && setSelectedStudentForDetail(null)}>
+        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col p-0 overflow-hidden">
+          {selectedStudentForDetail && (
+            <>
+              <DialogHeader className="p-6 pb-4 border-b bg-muted/20">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pr-6">
+                  <div>
+                    <DialogTitle className="text-xl font-black text-foreground flex items-center gap-2">
+                      <GraduationCap className="h-5 w-5 text-primary" />
+                      {selectedStudentForDetail.name}
+                    </DialogTitle>
+                    <DialogDescription className="text-xs text-muted-foreground mt-1">
+                      NIS: <span className="font-mono font-semibold text-foreground">{selectedStudentForDetail.nis || '-'}</span> | Kelas: <span className="font-medium text-foreground">{selectedStudentForDetail.class || '-'}</span> | Sekolah: <span className="font-medium text-foreground">{selectedStudentForDetail.school_name}</span>
+                    </DialogDescription>
+                  </div>
+                </div>
+
+                {/* Financial Summary Badges */}
+                <div className="grid grid-cols-3 gap-2 mt-4">
+                  <div className="bg-background rounded-lg border p-2.5">
+                    <span className="text-[10px] font-bold uppercase text-muted-foreground block">Sisa Saldo</span>
+                    <span className={`text-base font-black font-mono tabular-nums ${selectedStudentForDetail.balance >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      {formatIDR(selectedStudentForDetail.balance)}
+                    </span>
+                  </div>
+                  <div className="bg-background rounded-lg border p-2.5">
+                    <span className="text-[10px] font-bold uppercase text-muted-foreground block">Total Setoran</span>
+                    <span className="text-base font-black font-mono tabular-nums text-emerald-600">
+                      {formatIDR(selectedStudentForDetail.total_income)}
+                    </span>
+                  </div>
+                  <div className="bg-background rounded-lg border p-2.5">
+                    <span className="text-[10px] font-bold uppercase text-muted-foreground block">Total Tarik/Jajan</span>
+                    <span className="text-base font-black font-mono tabular-nums text-rose-600">
+                      {formatIDR(selectedStudentForDetail.total_expense)}
+                    </span>
+                  </div>
+                </div>
+              </DialogHeader>
+
+              {/* Transaction List */}
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-3">
+                <div className="flex items-center justify-between text-xs font-bold text-muted-foreground">
+                  <span>Daftar Transaksi ({selectedStudentForDetail.transactions?.length || 0})</span>
+                  <Link
+                    href={`/admin/transactions?studentId=${selectedStudentForDetail.id}&studentName=${encodeURIComponent(selectedStudentForDetail.name)}`}
+                    className="text-primary hover:underline flex items-center gap-1 font-semibold"
+                  >
+                    Buka Halaman Lengkap & Filter <ExternalLink className="h-3 w-3" />
+                  </Link>
+                </div>
+
+                {(!selectedStudentForDetail.transactions || selectedStudentForDetail.transactions.length === 0) ? (
+                  <div className="text-center py-10 text-muted-foreground text-sm border rounded-xl bg-muted/10">
+                    <Receipt className="h-8 w-8 mx-auto text-muted-foreground/40 mb-2" />
+                    Belum ada riwayat transaksi tercatat untuk siswa ini.
+                  </div>
+                ) : (
+                  <div className="border rounded-xl overflow-hidden shadow-xs">
+                    <Table>
+                      <TableHeader className="bg-muted/40 text-[11px]">
+                        <TableRow>
+                          <TableHead className="w-32 py-2">Waktu</TableHead>
+                          <TableHead className="w-24 py-2">Tipe</TableHead>
+                          <TableHead className="py-2">Kategori & Keterangan</TableHead>
+                          <TableHead className="w-28 text-right py-2">Nominal</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {selectedStudentForDetail.transactions.map((tx) => {
+                          const isIncome = tx.type === 'Pemasukan';
+                          const txDate = tx.created_at ? new Date(tx.created_at) : new Date();
+
+                          return (
+                            <TableRow key={tx.id} className="text-xs">
+                              <TableCell className="font-mono text-[11px] text-muted-foreground py-2.5">
+                                {format(txDate, 'dd/MM/yyyy HH:mm', { locale: idLocale })}
+                              </TableCell>
+                              <TableCell className="py-2.5">
+                                <Badge
+                                  variant="outline"
+                                  className={`text-[10px] px-2 py-0 font-bold ${
+                                    isIncome
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-400'
+                                      : 'bg-rose-50 text-rose-700 border-rose-300 dark:bg-rose-950/40 dark:text-rose-400'
+                                  }`}
+                                >
+                                  {tx.type}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="py-2.5">
+                                <div className="font-semibold text-foreground text-xs">
+                                  {tx.category || 'Umum'}
+                                </div>
+                                {tx.description && (
+                                  <div className="text-[11px] text-muted-foreground truncate max-w-[200px]">
+                                    {tx.description}
+                                  </div>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-right font-mono font-bold py-2.5 tabular-nums">
+                                <span className={isIncome ? 'text-emerald-600' : 'text-rose-600'}>
+                                  {isIncome ? '+' : '-'} {formatIDR(tx.amount)}
+                                </span>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </div>
+
+              {/* Dialog Footer */}
+              <div className="p-4 border-t bg-muted/20 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <span className="text-xs text-muted-foreground">
+                  Admin Pusat memiliki wewenang untuk mengedit atau menghapus data transaksi jika diperlukan.
+                </span>
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSelectedStudentForDetail(null)}
+                    className="flex-1 sm:flex-none font-bold"
+                  >
+                    Tutup
+                  </Button>
+                  <Button
+                    asChild
+                    size="sm"
+                    className="flex-1 sm:flex-none gap-1.5 font-bold"
+                  >
+                    <Link href={`/admin/transactions?studentId=${selectedStudentForDetail.id}&studentName=${encodeURIComponent(selectedStudentForDetail.name)}`}>
+                      <ExternalLink className="h-3.5 w-3.5" />
+                      Kelola Transaksi Siswa
+                    </Link>
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
