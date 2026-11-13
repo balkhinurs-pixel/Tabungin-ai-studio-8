@@ -210,14 +210,27 @@ export async function getStudentDataForPayment(nisInput: string, schoolCodeInput
     const supabaseAdmin = getSupabaseAdmin();
 
     try {
-        let nis = nisInput.trim();
+        const rawInput = nisInput.trim();
+        let nis = rawInput;
         let embeddedSchoolCode = '';
 
-        // Jika input gabungan seperti "12345,sch001"
-        if (nis.includes(',')) {
-            const parts = nis.split(',');
-            nis = parts[0].trim();
-            embeddedSchoolCode = parts[1].trim().toLowerCase();
+        // Wajib format QR kartu resmi: "NIS,KODE_SEKOLAH" (mencegah input NIS manual polos)
+        if (!rawInput.includes(',')) {
+            return {
+                success: false,
+                message: 'Input NIS manual dinonaktifkan. Wajib memindai QR Code pada kartu fisik santri.'
+            };
+        }
+
+        const parts = rawInput.split(',');
+        nis = (parts[0] || '').trim();
+        embeddedSchoolCode = (parts[1] || '').trim().toLowerCase();
+
+        if (!nis || !embeddedSchoolCode) {
+            return {
+                success: false,
+                message: 'Format QR Code kartu tidak valid. Pastikan memindai QR Code kartu santri yang resmi.'
+            };
         }
 
         // 1. Identifikasi sekolah akun kantin yang sedang login
@@ -249,7 +262,7 @@ export async function getStudentDataForPayment(nisInput: string, schoolCodeInput
         let query = supabaseAdmin
             .from('students')
             .select(`
-                id, name, class, nis, daily_limit,
+                id, name, class, nis, daily_limit, avatar_url,
                 transactions (amount, type, created_at),
                 profiles:user_id!inner (school_code, school_name)
             `)
@@ -310,6 +323,7 @@ export async function getStudentDataForPayment(nisInput: string, schoolCodeInput
                 name: data.name,
                 class: data.class,
                 nis: data.nis,
+                avatarUrl: data.avatar_url || null,
                 balance: balance,
                 dailyLimit: data.daily_limit,
                 remainingDailyLimit: remainingDailyLimit,

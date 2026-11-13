@@ -28,7 +28,10 @@ import {
   Wallet,
   UserCheck,
   BadgeCheck,
-  Building2
+  Building2,
+  ShieldCheck,
+  RefreshCw,
+  User
 } from 'lucide-react';
 import jsQR from 'jsqr';
 import { useToast } from '@/hooks/use-toast';
@@ -90,13 +93,16 @@ export default function CantinePOSPage() {
   const [errorMessage, setErrorMessage] = useState('');
   const [isProcessingQR, setIsProcessingQR] = useState(false);
 
-  // Scan Method: Hardware Scanner / USB Barcode vs Camera
-  const [scanMethod, setScanMethod] = useState<'DEVICE' | 'CAMERA'>('DEVICE');
-  const [manualScanInput, setManualScanInput] = useState('');
+  // Scan Method: Default CAMERA (HP/Tablet) vs Hardware Scanner (USB/Bluetooth)
+  const [scanMethod, setScanMethod] = useState<'CAMERA' | 'DEVICE'>('CAMERA');
+  const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const scannerInputRef = useRef<HTMLInputElement>(null);
+  const processingRef = useRef(false);
+  const scanBufferRef = useRef('');
+  const lastKeyTimeRef = useRef(0);
+  const manualAttemptRef = useRef(false);
   const { toast } = useToast();
   const router = useRouter();
 
@@ -123,15 +129,59 @@ export default function CantinePOSPage() {
     loadData();
   }, []);
 
-  // Auto Focus Hardware Scanner Input
+  // Hardware USB / Bluetooth QR Scanner Listener ONLY (Menolak ketikan keyboard manual)
   useEffect(() => {
-    if (state === 'SCANNING' && scanMethod === 'DEVICE') {
-      const timer = setTimeout(() => {
-        scannerInputRef.current?.focus();
-      }, 100);
-      return () => clearTimeout(timer);
+    if (state !== 'SCANNING' || scanMethod !== 'DEVICE') {
+      scanBufferRef.current = '';
+      manualAttemptRef.current = false;
+      return;
     }
-  }, [state, scanMethod]);
+
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      const now = Date.now();
+      const timeDiff = now - lastKeyTimeRef.current;
+      lastKeyTimeRef.current = now;
+
+      if (e.key === 'Enter') {
+        const scannedData = scanBufferRef.current.trim();
+        const wasManual = manualAttemptRef.current;
+        scanBufferRef.current = '';
+        manualAttemptRef.current = false;
+
+        if (scannedData.length >= 3 && !wasManual) {
+          e.preventDefault();
+          if (!processingRef.current) {
+            handleScan(scannedData);
+          }
+        } else if (wasManual || scannedData.length > 0) {
+          e.preventDefault();
+          toast({
+            title: 'Input Manual Dinonaktifkan',
+            description: 'Gunakan scan kartu fisik (Kamera atau Alat Scanner).',
+            variant: 'destructive',
+          });
+        }
+        return;
+      }
+
+      if (e.key.length === 1) {
+        // Alat scanner mengetik sangat cepat (< 80ms antar karakter).
+        // Jika jeda > 80ms dan buffer sudah ada, itu ketikan tangan manusia.
+        if (scanBufferRef.current.length > 0 && timeDiff > 80) {
+          scanBufferRef.current = '';
+          manualAttemptRef.current = true;
+        } else if (scanBufferRef.current.length === 0) {
+          manualAttemptRef.current = false;
+        }
+        scanBufferRef.current += e.key;
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown, true);
+    return () => {
+      window.removeEventListener('keydown', handleGlobalKeyDown, true);
+    };
+  }, [state, scanMethod, toast]);
 
   const handleReset = () => {
     setState('POS_CATALOG');
@@ -140,8 +190,10 @@ export default function CantinePOSPage() {
     setPin('');
     setCart([]);
     setIsProcessingQR(false);
+    processingRef.current = false;
+    scanBufferRef.current = '';
+    manualAttemptRef.current = false;
     setErrorMessage('');
-    setManualScanInput('');
     setCashGiven('');
     setCashChange(0);
     setCustomerName('Pembeli Umum');
@@ -196,64 +248,100 @@ export default function CantinePOSPage() {
     if (state !== 'SCANNING' || scanMethod !== 'CAMERA') return;
 
     let stream: MediaStream | null = null;
+    let isCancelled = false;
+    let animId = 0;
+
     const startCamera = async () => {
       try {
         stream = await navigator.mediaDevices.getUserMedia({ 
-            video: { facingMode: 'environment' } 
+            video: { facingMode } 
         });
+        if (isCancelled) {
+          stream.getTracks().forEach(t => t.stop());
+          return;
+        }
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
         }
-      } catch (err) {
-        toast({ title: "Izin Kamera Ditolak", variant: "destructive" });
+      } catch {
+        // Fallback jika kamera belakang tidak tersedia (misalnya tablet/laptop)
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          if (isCancelled) {
+            stream.getTracks().forEach(t => t.stop());
+            return;
+          }
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+          }
+        } catch {
+          toast({ title: "Izin Kamera Ditolak / Tidak Tersedia", variant: "destructive" });
+        }
       }
     };
 
     startCamera();
 
     const tick = () => {
-      if (state === 'SCANNING' && scanMethod === 'CAMERA' && !isProcessingQR && videoRef.current?.readyState === videoRef.current?.HAVE_ENOUGH_DATA) {
+      if (isCancelled) return;
+      if (
+        state === 'SCANNING' &&
+        scanMethod === 'CAMERA' &&
+        !processingRef.current &&
+        videoRef.current?.readyState === videoRef.current?.HAVE_ENOUGH_DATA
+      ) {
         const video = videoRef.current;
-        const canvas = canvasRef.current!;
-        const context = canvas.getContext('2d', { willReadFrequently: true });
+        const canvas = canvasRef.current;
+        const context = canvas?.getContext('2d', { willReadFrequently: true });
         
-        canvas.height = video.videoHeight;
-        canvas.width = video.videoWidth;
-        context?.drawImage(video, 0, 0, canvas.width, canvas.height);
-        
-        const imageData = context?.getImageData(0, 0, canvas.width, canvas.height);
-        const code = jsQR(imageData!.data, imageData!.width, imageData!.height);
+        if (canvas && context && video.videoWidth > 0 && video.videoHeight > 0) {
+          canvas.height = video.videoHeight;
+          canvas.width = video.videoWidth;
+          context.drawImage(video, 0, 0, canvas.width, canvas.height);
+          
+          const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+          const code = jsQR(imageData.data, imageData.width, imageData.height);
 
-        if (code) {
-            setIsProcessingQR(true);
-            handleScan(code.data);
+          if (code && code.data) {
+              handleScan(code.data);
+          }
         }
       }
-      if (state === 'SCANNING' && scanMethod === 'CAMERA') requestAnimationFrame(tick);
+      if (!isCancelled && state === 'SCANNING' && scanMethod === 'CAMERA') {
+        animId = requestAnimationFrame(tick);
+      }
     };
 
-    const animId = requestAnimationFrame(tick);
+    animId = requestAnimationFrame(tick);
 
     return () => {
+      isCancelled = true;
       cancelAnimationFrame(animId);
       if (stream) {
         stream.getTracks().forEach(t => t.stop());
       }
     };
-  }, [state, scanMethod, isProcessingQR, toast]);
+  }, [state, scanMethod, facingMode, toast]);
 
   const handleScan = async (data: string) => {
-    if (!data.trim()) return;
+    if (!data.trim() || processingRef.current) return;
+    processingRef.current = true;
     setIsProcessingQR(true);
     
     const result = await getStudentDataForPayment(data, canteenSchool.schoolCode);
 
     if (result.success) {
         setStudent(result.data);
+        setPin('');
+        setIsProcessingQR(false);
+        processingRef.current = false;
         setState('PIN_INPUT');
     } else {
         toast({ title: result.message, variant: "destructive" });
-        setTimeout(() => setIsProcessingQR(false), 2000);
+        setTimeout(() => {
+          setIsProcessingQR(false);
+          processingRef.current = false;
+        }, 2000);
     }
   };
 
@@ -435,7 +523,10 @@ export default function CantinePOSPage() {
           </div>
       </div>
 
-      <div className="flex-1 flex flex-col items-center justify-center overflow-hidden">
+      <div className={cn(
+        "flex-1 flex flex-col items-center",
+        state === 'POS_CATALOG' && posMode === 'CATALOG' ? "justify-center overflow-hidden" : "overflow-y-auto"
+      )}>
           {/* STEP 1: MODE POS KATALOG BARANG */}
           {state === 'POS_CATALOG' && posMode === 'CATALOG' && (
             <div className="w-full flex-1 flex flex-col lg:flex-row overflow-hidden max-w-lg lg:max-w-5xl mx-auto bg-white rounded-3xl border border-gray-200 shadow-sm p-4 gap-4">
@@ -862,19 +953,8 @@ export default function CantinePOSPage() {
                     </div>
                   )}
 
-                  {/* Mode Selector: DEVICE SCANNER vs KAMERA */}
+                  {/* Mode Selector: KAMERA HP/TABLET (Utama) vs ALAT SCANNER USB/BT */}
                   <div className="flex items-center gap-1 bg-gray-200/80 p-1.5 rounded-2xl w-full">
-                      <button
-                          type="button"
-                          onClick={() => setScanMethod('DEVICE')}
-                          className={cn(
-                              "flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-black transition-all",
-                              scanMethod === 'DEVICE' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-900"
-                          )}
-                      >
-                          <Usb className="h-4 w-4 text-emerald-600" />
-                          <span>Alat Scanner / USB</span>
-                      </button>
                       <button
                           type="button"
                           onClick={() => setScanMethod('CAMERA')}
@@ -884,74 +964,83 @@ export default function CantinePOSPage() {
                           )}
                       >
                           <Camera className="h-4 w-4 text-primary" />
-                          <span>Kamera HP / Webcam</span>
+                          <span>Kamera HP / Tablet</span>
+                      </button>
+                      <button
+                          type="button"
+                          onClick={() => setScanMethod('DEVICE')}
+                          className={cn(
+                              "flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-black transition-all",
+                              scanMethod === 'DEVICE' ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-900"
+                          )}
+                      >
+                          <Usb className="h-4 w-4 text-emerald-600" />
+                          <span>Alat Scanner USB/BT</span>
                       </button>
                   </div>
 
-                  {scanMethod === 'DEVICE' ? (
-                      /* HARDWARE SCANNER / MANUAL NIS MODE */
-                      <Card className="w-full border-2 border-emerald-100 bg-white rounded-3xl shadow-md overflow-hidden p-5">
+                  {scanMethod === 'CAMERA' ? (
+                      /* CAMERA QR SCANNER MODE (HP & TABLET) */
+                      <div className="flex flex-col items-center space-y-3 w-full">
+                          <div className="relative w-64 h-64 border-4 border-dashed border-primary/40 rounded-[2.5rem] overflow-hidden flex items-center justify-center bg-gray-900 shadow-inner">
+                              <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+                              <canvas ref={canvasRef} className="hidden" />
+                              <div className="absolute inset-0 border-[20px] border-black/25 pointer-events-none" />
+                              <div className="absolute w-full h-1 bg-primary shadow-[0_0_15px_rgba(59,130,246,0.9)] animate-pulse" />
+                              {isProcessingQR && (
+                                <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center gap-2 text-white">
+                                  <Loader2 className="h-8 w-8 animate-spin text-emerald-400" />
+                                  <span className="text-[11px] font-black tracking-wider uppercase">Memverifikasi Kartu...</span>
+                                </div>
+                              )}
+                          </div>
+                          
+                          <div className="flex items-center gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setFacingMode(prev => prev === 'environment' ? 'user' : 'environment')}
+                              className="h-8 rounded-full text-[11px] font-bold gap-1.5 bg-white"
+                            >
+                              <RefreshCw className="h-3.5 w-3.5" />
+                              {facingMode === 'environment' ? 'Kamera Belakang (Putar)' : 'Kamera Depan (Putar)'}
+                            </Button>
+                          </div>
+
+                          <div className="text-center space-y-1">
+                              <h3 className="text-sm font-black text-gray-900 tracking-tight">Scan QR Code Kartu Fisik Santri</h3>
+                              <p className="text-[11px] font-bold text-gray-500">
+                                Arahkan kamera ke QR Code pada kartu santri. Input NIS manual dinonaktifkan demi keamanan.
+                              </p>
+                          </div>
+                      </div>
+                  ) : (
+                      /* HARDWARE SCANNER ONLY MODE (TANPA INPUT MANUAL) */
+                      <Card className="w-full border-2 border-emerald-100 bg-white rounded-3xl shadow-md overflow-hidden p-6">
                           <div className="space-y-4 text-center">
                               <div className="inline-flex items-center gap-2 bg-emerald-50 text-emerald-700 px-3 py-1 rounded-full text-[10px] font-black tracking-wider uppercase border border-emerald-200">
                                   <span className="h-2 w-2 rounded-full bg-emerald-500 animate-ping" />
-                                  HARDWARE SCANNER SIAP
+                                  ALAT SCANNER QR SIAP
+                              </div>
+
+                              <div className="mx-auto h-16 w-16 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600">
+                                {isProcessingQR ? <Loader2 className="h-8 w-8 animate-spin" /> : <QrCode className="h-8 w-8" />}
                               </div>
 
                               <div className="space-y-1">
-                                  <h3 className="text-base font-black text-gray-900">Scan Kartu dengan Alat Scanner</h3>
-                                  <p className="text-xs text-gray-400 font-bold">
-                                      Arahkan alat barcode scanner USB / Bluetooth ke kartu siswa, atau ketik NIS di bawah ini:
+                                  <h3 className="text-base font-black text-gray-900">Tempelkan Kartu ke Alat Scanner</h3>
+                                  <p className="text-xs text-gray-500 font-medium leading-relaxed">
+                                      Gunakan alat QR scanner USB / Bluetooth untuk membaca QR Code kartu fisik santri.
                                   </p>
                               </div>
 
-                              <form 
-                                  onSubmit={(e) => {
-                                      e.preventDefault();
-                                      handleScan(manualScanInput);
-                                  }}
-                                  className="space-y-3 pt-2"
-                              >
-                                  <div className="relative">
-                                      <QrCode className="absolute left-3.5 top-3.5 h-5 w-5 text-emerald-600" />
-                                      <Input 
-                                          ref={scannerInputRef}
-                                          value={manualScanInput}
-                                          onChange={(e) => setManualScanInput(e.target.value)}
-                                          placeholder="Arahkan scanner / ketik NIS..."
-                                          className="pl-11 pr-4 h-12 rounded-2xl border-2 border-emerald-200 text-sm font-black focus-visible:ring-emerald-500 bg-emerald-50/20"
-                                          autoFocus
-                                      />
-                                  </div>
-
-                                  <Button 
-                                      type="submit" 
-                                      disabled={!manualScanInput.trim() || isProcessingQR} 
-                                      className="w-full h-12 rounded-2xl font-black bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/20"
-                                  >
-                                      {isProcessingQR ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Proses & Cari Siswa'}
-                                  </Button>
-                              </form>
-
-                              <p className="text-[10px] font-bold text-gray-400 italic">
-                                  *Scanner USB / Bluetooth otomatis menekan Enter setelah scan.
-                              </p>
+                              <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-bold">
+                                  <ShieldCheck className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                                  <span>Mode aman: Input NIS manual tidak diizinkan</span>
+                              </div>
                           </div>
                       </Card>
-                  ) : (
-                      /* CAMERA SCANNER MODE */
-                      <div className="flex flex-col items-center space-y-3">
-                          <div className="relative w-64 h-64 border-4 border-dashed border-gray-200 rounded-[2.5rem] overflow-hidden flex items-center justify-center bg-gray-100">
-                              <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" />
-                              <canvas ref={canvasRef} className="hidden" />
-                              <div className="absolute inset-0 border-[20px] border-white/40 pointer-events-none" />
-                              <div className="absolute w-full h-1 bg-primary shadow-[0_0_15px_rgba(59,130,246,0.8)] animate-pulse" />
-                          </div>
-                          
-                          <div className="text-center">
-                              <h3 className="text-sm font-black text-gray-900 tracking-tight">Kamera Utama Aktif</h3>
-                              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">Arahkan kamera ke kode QR kartu siswa.</p>
-                          </div>
-                      </div>
                   )}
 
                   {/* Tombol Cepat Beralih ke Bayar Tunai (Tanpa Scan Kartu) */}
@@ -985,16 +1074,42 @@ export default function CantinePOSPage() {
               </div>
           )}
 
-          {/* STEP 3: INPUT PIN */}
+          {/* STEP 3: INPUT PIN + KONFIRMASI FOTO & IDENTITAS SANTRI */}
           {state === 'PIN_INPUT' && (
-              <Keypad 
-                label="PIN KEAMANAN SISWA" 
-                subLabel={student?.name}
-                value={pin} 
-                onChange={setPin} 
-                onConfirm={handleProcessPayment} 
-                max={6}
-              />
+              <div className="w-full max-w-sm flex flex-col flex-1 justify-between items-center py-1">
+                {student && (
+                  <div className="w-full bg-white border-2 border-blue-100 rounded-2xl p-3 flex items-center gap-3 shadow-sm mb-1">
+                    <div className="h-12 w-12 rounded-xl overflow-hidden bg-blue-50 border border-blue-200 flex items-center justify-center shrink-0">
+                      {student.avatarUrl ? (
+                        <img
+                          src={student.avatarUrl}
+                          alt={student.name}
+                          className="h-full w-full object-cover"
+                          referrerPolicy="no-referrer"
+                        />
+                      ) : (
+                        <User className="h-6 w-6 text-blue-600" />
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[10px] font-black uppercase tracking-wider text-blue-600">Cocokkan Wajah Pembeli</p>
+                      <h4 className="font-black text-sm text-gray-900 truncate">{student.name}</h4>
+                      <p className="text-[11px] text-gray-500 font-bold truncate">
+                        NIS: {student.nis} • Kelas {student.class || '-'}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                <Keypad 
+                  label="PIN KEAMANAN SISWA" 
+                  subLabel={`Tagihan: Rp ${finalAmount.toLocaleString('id-ID')}`}
+                  value={pin} 
+                  onChange={setPin} 
+                  onConfirm={handleProcessPayment} 
+                  max={6}
+                />
+              </div>
           )}
 
           {/* STEP 4: PROCESSING */}
