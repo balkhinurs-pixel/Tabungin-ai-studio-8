@@ -25,7 +25,9 @@ import {
   Volume2,
   Coins,
   Calculator,
-  Building2
+  Building2,
+  WifiOff,
+  SearchCheck
 } from 'lucide-react';
 import jsQR from 'jsqr';
 import { useToast } from '@/hooks/use-toast';
@@ -33,6 +35,9 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { getStudentKioskData, processKioskWithdrawal, verifySchoolCodeAction } from './actions';
+import { checkTransactionStatusByKey } from '@/app/actions/transaction-guard';
+import { executeWithNetworkGuard, generateIdempotencyKey } from '@/lib/transaction-client';
+import { useNetworkStatus } from '@/hooks/use-network-status';
 import KioskSettlementModal from './components/KioskSettlementModal';
 
 type KioskState = 'SCANNING' | 'MAIN_MENU' | 'PIN_INPUT' | 'WITHDRAW_MENU' | 'CUSTOM_AMOUNT' | 'REASON_SELECTION' | 'PROCESSING' | 'SUCCESS' | 'ERROR';
@@ -65,8 +70,17 @@ export default function KioskPage() {
   const [reason, setReason] = useState('Uang Saku / Jajan');
   const [isCustomReason, setIsCustomReason] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [errorKind, setErrorKind] = useState<'BUSINESS' | 'NETWORK'>('BUSINESS');
+  const [isSlowProcessing, setIsSlowProcessing] = useState(false);
+  const [isCheckingStatus, setIsCheckingStatus] = useState(false);
+  const [pendingWithdrawArgs, setPendingWithdrawArgs] = useState<{ amount: number; description?: string } | null>(null);
   const [lastWithdrawal, setLastWithdrawal] = useState<number | null>(null);
   const [cameraRetryCount, setCameraRetryCount] = useState(0);
+
+  // Anti-dobel submit lock & idempotency key per transaksi
+  const isWithdrawingRef = useRef(false);
+  const idempotencyKeyRef = useRef<string>(generateIdempotencyKey('kiosk'));
+  const { isOnline } = useNetworkStatus();
 
   // Cashcow USB Scanner Buffer Refs & States
   const scanBufferRef = useRef('');
@@ -615,10 +629,28 @@ export default function KioskPage() {
         return;
     }
 
-    const result = await getStudentKioskData(nis, schoolCode);
+    const guardRes = await executeWithNetworkGuard(
+      () => getStudentKioskData(nis, schoolCode),
+      { timeoutMs: 12000 }
+    );
+
+    if (!guardRes.ok || !guardRes.data) {
+        playBeep('error');
+        setIsCashcowReading(false);
+        toast({
+            title: guardRes.failureKind === 'OFFLINE' ? "Koneksi Internet Terputus" : "Gagal Menghubungi Server",
+            description: guardRes.message || "Periksa koneksi internet Kios ATM lalu scan ulang kartu.",
+            variant: "destructive"
+        });
+        setTimeout(() => { processingRef.current = false; }, 2500);
+        return;
+    }
+
+    const result = guardRes.data;
 
     if (result.success && result.data) {
         playBeep('success');
+        idempotencyKeyRef.current = generateIdempotencyKey('kiosk');
         setStudent(result.data);
         setKioskState('MAIN_MENU');
         processingRef.current = false;
@@ -642,27 +674,114 @@ export default function KioskPage() {
   };
 
   const handleWithdraw = async (withAmount: number, withDescription?: string) => {
+    if (isWithdrawingRef.current || !student) return;
+
+    if (!isOnline) {
+      playBeep('error');
+      setErrorKind('NETWORK');
+      setPendingWithdrawArgs({ amount: withAmount, description: withDescription });
+      setErrorMessage('Koneksi internet terputus. Pastikan Wi-Fi / Data aktif lalu coba kirim ulang.');
+      setKioskState('ERROR');
+      return;
+    }
+
+    isWithdrawingRef.current = true;
+    setIsSlowProcessing(false);
+    setPendingWithdrawArgs({ amount: withAmount, description: withDescription });
     setKioskState('PROCESSING');
     
     const targetDesc = withDescription !== undefined ? withDescription : reason;
+    const currentKey = idempotencyKeyRef.current;
 
-    const result = await processKioskWithdrawal({
-        studentId: student.id,
-        nis: student.nis,
-        schoolCode: student.schoolCode,
-        pin: pin,
-        amount: withAmount,
-        description: targetDesc
-    });
+    try {
+      const guardRes = await executeWithNetworkGuard(
+        () => processKioskWithdrawal({
+          studentId: student.id,
+          nis: student.nis,
+          schoolCode: student.schoolCode,
+          pin: pin,
+          amount: withAmount,
+          description: targetDesc,
+          idempotencyKey: currentKey,
+        }),
+        {
+          slowThresholdMs: 4500,
+          timeoutMs: 15000,
+          onSlowConnection: () => setIsSlowProcessing(true),
+        }
+      );
 
-    if (result.success) {
-        setLastWithdrawal(withAmount);
-        setStudent({ ...student, balance: result.newBalance });
+      if (!guardRes.ok || !guardRes.data) {
+        playBeep('error');
+        setErrorKind('NETWORK');
+        setErrorMessage(guardRes.message || 'Koneksi terputus atau lambat. Cek status transaksi sebelum mengulang.');
+        setKioskState('ERROR');
+        return;
+      }
+
+      const result = guardRes.data;
+
+      if (result.success) {
+          playBeep('success');
+          setLastWithdrawal(withAmount);
+          setStudent({ ...student, balance: result.newBalance });
+          setPendingWithdrawArgs(null);
+          idempotencyKeyRef.current = generateIdempotencyKey('kiosk');
+          setKioskState('SUCCESS');
+          setTimeout(() => handleReset(), 10000);
+      } else {
+          playBeep('error');
+          setErrorKind('BUSINESS');
+          // Jika ditolak validasi bisnis (misal PIN salah / saldo kurang), siapkan key baru untuk percobaan berikutnya
+          idempotencyKeyRef.current = generateIdempotencyKey('kiosk');
+          setErrorMessage(result.message || 'Gagal memproses transaksi.');
+          setKioskState('ERROR');
+      }
+    } finally {
+      isWithdrawingRef.current = false;
+      setIsSlowProcessing(false);
+    }
+  };
+
+  const handleCheckPendingWithdrawal = async () => {
+    if (isCheckingStatus) return;
+    setIsCheckingStatus(true);
+    try {
+      const check = await checkTransactionStatusByKey(idempotencyKeyRef.current);
+      if (check.status === 'DONE' && check.result?.success) {
+        playBeep('success');
+        const amt = pendingWithdrawArgs?.amount || amount;
+        setLastWithdrawal(amt);
+        if (typeof check.result.newBalance === 'number' && student) {
+          setStudent({ ...student, balance: check.result.newBalance });
+        }
+        setPendingWithdrawArgs(null);
+        idempotencyKeyRef.current = generateIdempotencyKey('kiosk');
+        toast({
+          title: 'Transaksi Sudah Tercatat!',
+          description: 'Penarikan sebelumnya sudah masuk di server. Tidak terjadi dobel potong.',
+        });
         setKioskState('SUCCESS');
         setTimeout(() => handleReset(), 10000);
-    } else {
-        setErrorMessage(result.message || 'Gagal memproses transaksi.');
-        setKioskState('ERROR');
+      } else if (check.status === 'PROCESSING') {
+        toast({
+          title: 'Masih Diproses Server',
+          description: check.message,
+        });
+      } else {
+        toast({
+          title: 'Belum Tercatat di Server',
+          description: 'Aman untuk menekan tombol "Kirim Ulang (Aman)".',
+        });
+      }
+    } catch {
+      toast({
+        title: 'Gagal Mengecek Status',
+        description: 'Koneksi masih terputus. Pastikan internet kembali aktif.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsCheckingStatus(false);
     }
   };
 
@@ -674,8 +793,13 @@ export default function KioskPage() {
     setReason('Uang Saku / Jajan');
     setIsCustomReason(false);
     setErrorMessage('');
+    setErrorKind('BUSINESS');
+    setIsSlowProcessing(false);
+    setPendingWithdrawArgs(null);
     setLastWithdrawal(null);
     processingRef.current = false;
+    isWithdrawingRef.current = false;
+    idempotencyKeyRef.current = generateIdempotencyKey('kiosk');
   };
 
   const formatCurrency = (val: number) => 
@@ -1294,14 +1418,18 @@ export default function KioskPage() {
 
             {/* 6. STATE: PROCESSING */}
             {kioskState === 'PROCESSING' && (
-                <div className="flex flex-col items-center gap-8">
+                <div className="flex flex-col items-center gap-8 max-w-sm text-center px-4">
                     <div className="relative">
                         <div className="h-24 w-24 border-8 border-white/10 rounded-full" />
                         <div className="h-24 w-24 border-8 border-primary border-t-transparent rounded-full animate-spin absolute inset-0" />
                     </div>
-                    <div className="text-center space-y-2">
+                    <div className="space-y-2">
                         <h2 className="text-3xl font-black text-white tracking-[0.3em] uppercase animate-pulse italic">Memproses</h2>
-                        <p className="text-white/30 font-bold uppercase tracking-[0.4em] text-[11px]">Verifikasi Transaksi Aman</p>
+                        <p className="text-white/50 font-bold uppercase tracking-[0.25em] text-[11px]">
+                          {isSlowProcessing
+                            ? 'Koneksi agak lambat, mohon tunggu... Jangan tutup layar.'
+                            : 'Verifikasi Transaksi Aman'}
+                        </p>
                     </div>
                 </div>
             )}
@@ -1360,22 +1488,57 @@ export default function KioskPage() {
             {/* 8. STATE: ERROR */}
             {kioskState === 'ERROR' && (
                 <div className="w-full max-w-md animate-in shake-in duration-500">
-                    <Card className="bg-rose-600 border-none shadow-2xl rounded-[3rem] overflow-hidden text-center text-white">
-                        <CardContent className="p-10 flex flex-col items-center">
-                            <div className="bg-white/20 p-5 rounded-full mb-8 shadow-inner">
-                                <AlertCircle className="h-10 w-10 text-white" />
+                    <Card className={cn(
+                      "border-none shadow-2xl rounded-[3rem] overflow-hidden text-center text-white",
+                      errorKind === 'NETWORK' ? "bg-amber-600" : "bg-rose-600"
+                    )}>
+                        <CardContent className="p-8 sm:p-10 flex flex-col items-center">
+                            <div className="bg-white/20 p-5 rounded-full mb-6 shadow-inner">
+                                {errorKind === 'NETWORK' ? (
+                                  <WifiOff className="h-10 w-10 text-white" />
+                                ) : (
+                                  <AlertCircle className="h-10 w-10 text-white" />
+                                )}
                             </div>
-                            <h2 className="text-3xl font-black tracking-tight mb-4 uppercase">GAGAL!</h2>
-                            <p className="text-rose-100 font-bold mb-10 text-sm leading-relaxed px-6 uppercase tracking-wider">{errorMessage}</p>
-                            <Button 
-                                className="w-full h-20 rounded-[2rem] bg-white text-rose-600 font-black text-lg shadow-2xl active:scale-95 transition-all"
-                                onClick={() => setKioskState('PIN_INPUT')}
-                            >
-                                COBA LAGI
-                            </Button>
+                            <h2 className="text-2xl sm:text-3xl font-black tracking-tight mb-3 uppercase">
+                              {errorKind === 'NETWORK' ? 'KONEKSI BERMASALAH' : 'GAGAL!'}
+                            </h2>
+                            <p className="text-white/90 font-bold mb-8 text-xs sm:text-sm leading-relaxed px-4 tracking-wide">
+                              {errorMessage}
+                            </p>
+
+                            {errorKind === 'NETWORK' && pendingWithdrawArgs ? (
+                              <div className="w-full space-y-3">
+                                <Button 
+                                    className="w-full h-16 rounded-[2rem] bg-white text-amber-700 font-black text-sm sm:text-base shadow-2xl active:scale-95 transition-all gap-2"
+                                    onClick={handleCheckPendingWithdrawal}
+                                    disabled={isCheckingStatus}
+                                >
+                                    {isCheckingStatus ? <Loader2 className="h-5 w-5 animate-spin" /> : <SearchCheck className="h-5 w-5" />}
+                                    CEK STATUS TRANSAKSI
+                                </Button>
+                                <Button 
+                                    variant="outline"
+                                    className="w-full h-14 rounded-[2rem] bg-white/15 border-white/40 text-white font-black text-sm hover:bg-white/25 active:scale-95 transition-all gap-2"
+                                    disabled={!isOnline || isCheckingStatus}
+                                    onClick={() => handleWithdraw(pendingWithdrawArgs.amount, pendingWithdrawArgs.description)}
+                                >
+                                    <RefreshCw className="h-4 w-4" />
+                                    KIRIM ULANG (AMAN / ANTI-DOBEL)
+                                </Button>
+                              </div>
+                            ) : (
+                              <Button 
+                                  className="w-full h-20 rounded-[2rem] bg-white text-rose-600 font-black text-lg shadow-2xl active:scale-95 transition-all"
+                                  onClick={() => setKioskState('PIN_INPUT')}
+                              >
+                                  COBA LAGI
+                              </Button>
+                            )}
+
                             <Button 
                                 variant="ghost" 
-                                className="w-full h-14 mt-4 text-white/40 text-[11px] font-black uppercase tracking-widest hover:text-white"
+                                className="w-full h-14 mt-4 text-white/60 text-[11px] font-black uppercase tracking-widest hover:text-white"
                                 onClick={() => handleReset()}
                             >
                                 Kembali ke Awal

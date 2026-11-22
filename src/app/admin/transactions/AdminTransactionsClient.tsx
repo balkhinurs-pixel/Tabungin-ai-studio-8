@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -40,6 +40,8 @@ import { format, parseISO, isToday, subDays } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
 import { useToast } from '@/hooks/use-toast';
 import { updateTransactionByAdmin, deleteTransactionByAdmin } from './actions';
+import { executeWithNetworkGuard } from '@/lib/transaction-client';
+import { useNetworkStatus } from '@/hooks/use-network-status';
 import { cn } from '@/lib/utils';
 import type { Profile } from '@/types';
 
@@ -102,6 +104,8 @@ export default function AdminTransactionsClient({
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
+  const isMutatingRef = useRef(false);
+  const { isOnline } = useNetworkStatus();
   const { toast } = useToast();
 
   // Filter transactions
@@ -240,7 +244,7 @@ export default function AdminTransactionsClient({
   };
 
   const handleSaveEdit = async () => {
-    if (!editingTx) return;
+    if (!editingTx || isMutatingRef.current) return;
     const numAmount = parseFloat(editAmount);
     if (isNaN(numAmount) || numAmount < 0) {
       toast({
@@ -251,34 +255,70 @@ export default function AdminTransactionsClient({
       return;
     }
 
-    setEditLoading(true);
-    const result = await updateTransactionByAdmin(editingTx.id, {
-      amount: numAmount,
-      type: editType,
-      description: editDescription.trim(),
-      category: editCategory,
-    });
-
-    if (result.success) {
-      toast({ title: 'Berhasil', description: result.message });
-      setTransactions((prev) =>
-        prev.map((t) =>
-          t.id === editingTx.id
-            ? {
-                ...t,
-                amount: numAmount,
-                type: editType,
-                description: editDescription.trim(),
-                category: editCategory,
-              }
-            : t
-        )
-      );
-      setIsEditDialogOpen(false);
-    } else {
-      toast({ title: 'Gagal', description: result.message, variant: 'destructive' });
+    if (!isOnline) {
+      toast({
+        title: 'Koneksi Terputus',
+        description: 'Anda sedang offline. Pastikan internet aktif sebelum menyimpan perubahan.',
+        variant: 'destructive',
+      });
+      return;
     }
-    setEditLoading(false);
+
+    isMutatingRef.current = true;
+    setEditLoading(true);
+    try {
+      const guardRes = await executeWithNetworkGuard(
+        () => updateTransactionByAdmin(editingTx.id, {
+          amount: numAmount,
+          type: editType,
+          description: editDescription.trim(),
+          category: editCategory,
+        }),
+        {
+          slowThresholdMs: 4500,
+          timeoutMs: 15000,
+          onSlowConnection: () => {
+            toast({
+              title: 'Koneksi Lambat...',
+              description: 'Sedang menunggu konfirmasi server. Jangan klik simpan berulang kali.',
+            });
+          },
+        }
+      );
+
+      if (!guardRes.ok || !guardRes.data) {
+        toast({
+          title: guardRes.failureKind === 'TIMEOUT' ? 'Waktu Tunggu Habis' : 'Koneksi Bermasalah',
+          description: guardRes.message || 'Gagal menghubungi server. Silakan cek daftar transaksi sebelum mengulang.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      const result = guardRes.data;
+      if (result.success) {
+        toast({ title: 'Berhasil', description: result.message });
+        setTransactions((prev) =>
+          prev.map((t) =>
+            t.id === editingTx.id
+              ? {
+                  ...t,
+                  amount: numAmount,
+                  type: editType,
+                  description: editDescription.trim(),
+                  category: editCategory,
+                }
+              : t
+          )
+        );
+        setIsEditDialogOpen(false);
+      } else {
+        toast({ title: 'Gagal', description: result.message, variant: 'destructive' });
+      }
+    } finally {
+      isMutatingRef.current = false;
+      setEditLoading(false);
+    }
   };
 
   const handleOpenDelete = (tx: AdminTransactionItem) => {
@@ -287,18 +327,55 @@ export default function AdminTransactionsClient({
   };
 
   const handleConfirmDelete = async () => {
-    if (!deletingTx) return;
-    setDeleteLoading(true);
-    const result = await deleteTransactionByAdmin(deletingTx.id);
+    if (!deletingTx || isMutatingRef.current) return;
 
-    if (result.success) {
-      toast({ title: 'Berhasil Dihapus', description: result.message });
-      setTransactions((prev) => prev.filter((t) => t.id !== deletingTx.id));
-      setIsDeleteDialogOpen(false);
-    } else {
-      toast({ title: 'Gagal', description: result.message, variant: 'destructive' });
+    if (!isOnline) {
+      toast({
+        title: 'Koneksi Terputus',
+        description: 'Anda sedang offline. Pastikan internet aktif sebelum menghapus transaksi.',
+        variant: 'destructive',
+      });
+      return;
     }
-    setDeleteLoading(false);
+
+    isMutatingRef.current = true;
+    setDeleteLoading(true);
+    try {
+      const guardRes = await executeWithNetworkGuard(
+        () => deleteTransactionByAdmin(deletingTx.id),
+        {
+          slowThresholdMs: 4500,
+          timeoutMs: 15000,
+          onSlowConnection: () => {
+            toast({
+              title: 'Koneksi Lambat...',
+              description: 'Sedang menunggu konfirmasi server.',
+            });
+          },
+        }
+      );
+
+      if (!guardRes.ok || !guardRes.data) {
+        toast({
+          title: guardRes.failureKind === 'TIMEOUT' ? 'Waktu Tunggu Habis' : 'Koneksi Bermasalah',
+          description: guardRes.message || 'Gagal menghubungi server. Muat ulang halaman untuk memastikan status data.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      const result = guardRes.data;
+      if (result.success) {
+        toast({ title: 'Berhasil Dihapus', description: result.message });
+        setTransactions((prev) => prev.filter((t) => t.id !== deletingTx.id));
+        setIsDeleteDialogOpen(false);
+      } else {
+        toast({ title: 'Gagal', description: result.message, variant: 'destructive' });
+      }
+    } finally {
+      isMutatingRef.current = false;
+      setDeleteLoading(false);
+    }
   };
 
   const formatCurrency = (val: number) => {
@@ -743,9 +820,9 @@ export default function AdminTransactionsClient({
 
           <DialogFooter>
             <DialogClose asChild>
-              <Button variant="ghost">Batal</Button>
+              <Button variant="ghost" disabled={editLoading}>Batal</Button>
             </DialogClose>
-            <Button onClick={handleSaveEdit} disabled={editLoading}>
+            <Button onClick={handleSaveEdit} disabled={editLoading || !isOnline}>
               {editLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
               Simpan Perubahan
             </Button>
@@ -771,9 +848,9 @@ export default function AdminTransactionsClient({
 
           <DialogFooter className="gap-2 sm:gap-0">
             <DialogClose asChild>
-              <Button variant="ghost">Batal</Button>
+              <Button variant="ghost" disabled={deleteLoading}>Batal</Button>
             </DialogClose>
-            <Button variant="destructive" onClick={handleConfirmDelete} disabled={deleteLoading}>
+            <Button variant="destructive" onClick={handleConfirmDelete} disabled={deleteLoading || !isOnline}>
               {deleteLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
               Ya, Hapus Transaksi
             </Button>

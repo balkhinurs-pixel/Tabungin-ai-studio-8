@@ -6,6 +6,14 @@ import { createClient } from '@/lib/utils/supabase/server';
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { revalidatePath } from 'next/cache';
 import { triggerSingleStudentLowBalanceWA } from '../settings/fonnte-actions';
+import {
+  clearIdempotencyProcessing,
+  insertTransactionSafe,
+  lookupIdempotencyStatus,
+  markIdempotencyDone,
+  markIdempotencyProcessing,
+  withEntityLock,
+} from '@/lib/transaction-dedup';
 
 export async function verifySchoolCodeAction(schoolCode: string) {
   const supabaseAdmin = getSupabaseAdmin();
@@ -145,125 +153,166 @@ export async function processKioskWithdrawal(params: {
     pin: string;
     amount: number;
     description?: string;
+    idempotencyKey?: string;
 }) {
-    const { studentId, nis, schoolCode, pin, amount, description } = params;
+    const { studentId, nis, schoolCode, pin, amount, description, idempotencyKey } = params;
     
     if (nis.includes('_arc_')) {
         return { success: false, message: 'Akun siswa ini telah dinonaktifkan (diarsipkan).' };
     }
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+        return { success: false, message: 'Nominal penarikan tidak valid.' };
+    }
     
     const supabaseAdmin = getSupabaseAdmin();
-    
-    try {
-        // 1. Verifikasi PIN menggunakan Non-Persisting Client
-        const authVerifier = createSupabaseClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-            {
-                auth: {
-                    persistSession: false,
-                    autoRefreshToken: false,
-                    detectSessionInUrl: false
+
+    return withEntityLock(`student:${studentId}`, async () => {
+        try {
+            // 0. Cek idempotency key agar tidak pernah double-insert saat retry / koneksi putus-nyambung
+            const existing = await lookupIdempotencyStatus(supabaseAdmin, idempotencyKey);
+            if (existing.found) {
+                if (existing.status === 'PROCESSING') {
+                    return { success: false, message: 'Transaksi penarikan sedang diproses. Mohon tunggu sebentar.' };
+                }
+                if (existing.result) {
+                    return existing.result;
                 }
             }
-        );
 
-        const shadowEmail = `${nis}@${schoolCode.toLowerCase()}.supabase.user`;
-        const { error: authError } = await authVerifier.auth.signInWithPassword({
-            email: shadowEmail,
-            password: pin
-        });
+            markIdempotencyProcessing(idempotencyKey);
 
-        if (authError) {
-            return { success: false, message: 'PIN yang Anda masukkan salah.' };
-        }
+            // 1. Verifikasi PIN menggunakan Non-Persisting Client
+            const authVerifier = createSupabaseClient(
+                process.env.NEXT_PUBLIC_SUPABASE_URL!,
+                process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+                {
+                    auth: {
+                        persistSession: false,
+                        autoRefreshToken: false,
+                        detectSessionInUrl: false
+                    }
+                }
+            );
 
-        // 2. Verifikasi Data Siswa & Limit Harian (Ambil data segar dari DB terikat kode sekolah)
-        const { data: student, error: studentError } = await supabaseAdmin
-            .from('students')
-            .select(`
-                user_id,
-                daily_limit,
-                transactions (amount, type, created_at),
-                profiles:user_id!inner (school_code)
-            `)
-            .eq('id', studentId)
-            .eq('profiles.school_code', schoolCode.trim().toLowerCase())
-            .single();
-        
-        if (studentError || !student) {
-            return { success: false, message: 'Verifikasi sekolah gagal. Siswa tidak terdaftar di sekolah ini.' };
-        }
+            const shadowEmail = `${nis}@${schoolCode.toLowerCase()}.supabase.user`;
+            const { error: authError } = await authVerifier.auth.signInWithPassword({
+                email: shadowEmail,
+                password: pin
+            });
 
-        const currentBalance = (student.transactions || []).reduce((acc: number, tx: any) => {
-            return acc + (tx.type === 'Pemasukan' ? tx.amount : -tx.amount);
-        }, 0);
-
-        if (amount > currentBalance) {
-            return { success: false, message: 'Saldo Anda tidak mencukupi.' };
-        }
-
-        // CEK LIMIT HARIAN UANG SAKU (SECURITY CHECK)
-        if (student.daily_limit && student.daily_limit > 0) {
-            const todayStart = new Date();
-            todayStart.setHours(0,0,0,0);
-
-            // Hitung pengeluaran uang saku hari ini (Kantin + ATM Kios)
-            const todaySpent = (student.transactions || [])
-                .filter((tx: any) => tx.type === 'Pengeluaran' && 
-                    (tx.category === 'BELANJA_KANTIN' || tx.category === 'TARIK_TUNAI') && 
-                    new Date(tx.created_at) >= todayStart
-                )
-                .reduce((sum: number, tx: any) => sum + tx.amount, 0);
-            
-            if (todaySpent + amount > student.daily_limit) {
-                const remaining = Math.max(0, student.daily_limit - todaySpent);
-                return { 
-                    success: false, 
-                    message: `PENARIKAN DITOLAK. Limit uang saku harian Anda terlampaui (Batas: Rp ${student.daily_limit.toLocaleString('id-ID')}/hari). Sisa jatah tarik tunai hari ini: Rp ${remaining.toLocaleString('id-ID')}` 
-                };
+            if (authError) {
+                clearIdempotencyProcessing(idempotencyKey);
+                return { success: false, message: 'PIN yang Anda masukkan salah.' };
             }
+
+            // 2. Verifikasi Data Siswa & Limit Harian (Ambil data segar dari DB terikat kode sekolah)
+            const { data: student, error: studentError } = await supabaseAdmin
+                .from('students')
+                .select(`
+                    user_id,
+                    daily_limit,
+                    transactions (amount, type, created_at, category),
+                    profiles:user_id!inner (school_code)
+                `)
+                .eq('id', studentId)
+                .eq('profiles.school_code', schoolCode.trim().toLowerCase())
+                .single();
+            
+            if (studentError || !student) {
+                clearIdempotencyProcessing(idempotencyKey);
+                return { success: false, message: 'Verifikasi sekolah gagal. Siswa tidak terdaftar di sekolah ini.' };
+            }
+
+            const currentBalance = (student.transactions || []).reduce((acc: number, tx: any) => {
+                return acc + (tx.type === 'Pemasukan' ? tx.amount : -tx.amount);
+            }, 0);
+
+            if (amount > currentBalance) {
+                clearIdempotencyProcessing(idempotencyKey);
+                return { success: false, message: 'Saldo Anda tidak mencukupi.' };
+            }
+
+            // CEK LIMIT HARIAN UANG SAKU (SECURITY CHECK)
+            if (student.daily_limit && student.daily_limit > 0) {
+                const todayStart = new Date();
+                todayStart.setHours(0,0,0,0);
+
+                // Hitung pengeluaran uang saku hari ini (Kantin + ATM Kios)
+                const todaySpent = (student.transactions || [])
+                    .filter((tx: any) => tx.type === 'Pengeluaran' && 
+                        (tx.category === 'BELANJA_KANTIN' || tx.category === 'TARIK_TUNAI') && 
+                        new Date(tx.created_at) >= todayStart
+                    )
+                    .reduce((sum: number, tx: any) => sum + tx.amount, 0);
+                
+                if (todaySpent + amount > student.daily_limit) {
+                    const remaining = Math.max(0, student.daily_limit - todaySpent);
+                    clearIdempotencyProcessing(idempotencyKey);
+                    return { 
+                        success: false, 
+                        message: `PENARIKAN DITOLAK. Limit uang saku harian Anda terlampaui (Batas: Rp ${student.daily_limit.toLocaleString('id-ID')}/hari). Sisa jatah tarik tunai hari ini: Rp ${remaining.toLocaleString('id-ID')}` 
+                    };
+                }
+            }
+
+            const formattedDescription = description && description.trim() !== '' 
+                ? `Tarik Tunai - ${description.trim()}`
+                : 'Tarik Tunai via Kios ATM';
+
+            // 3. Catat Transaksi Penarikan dengan Idempotency Safe Insert
+            const { error: txError, data: insertedTx, deduplicated } = await insertTransactionSafe(
+                supabaseAdmin,
+                {
+                    student_id: studentId,
+                    user_id: student.user_id,
+                    amount: amount,
+                    type: 'Pengeluaran',
+                    category: 'TARIK_TUNAI',
+                    description: formattedDescription
+                },
+                idempotencyKey
+            );
+
+            if (txError) {
+                clearIdempotencyProcessing(idempotencyKey);
+                throw txError;
+            }
+
+            const newBalance = deduplicated ? currentBalance : currentBalance - amount;
+            const successPayload = { 
+                success: true, 
+                message: 'Penarikan berhasil!',
+                newBalance,
+                transactionId: insertedTx?.id,
+                deduplicated: !!deduplicated,
+            };
+
+            markIdempotencyDone(idempotencyKey, successPayload, insertedTx?.id);
+
+            if (!deduplicated) {
+                // Auto trigger low balance WA notification asynchronously
+                if (student.user_id) {
+                    triggerSingleStudentLowBalanceWA({
+                        studentId,
+                        teacherUserId: student.user_id,
+                        baseUrl: process.env.NEXT_PUBLIC_APP_URL || 'https://tabungin.vercel.app'
+                    }).catch(e => console.error('[KIOSK_LOW_BALANCE_WA_ERR]', e));
+                }
+
+                revalidatePath('/dashboard');
+                revalidatePath(`/profiles/${studentId}`);
+                revalidatePath('/home');
+            }
+
+            return successPayload;
+
+        } catch (err) {
+            clearIdempotencyProcessing(idempotencyKey);
+            console.error('Kiosk Withdrawal Error:', err);
+            return { success: false, message: 'Terjadi kesalahan internal saat menyimpan penarikan.' };
         }
-
-        const formattedDescription = description && description.trim() !== '' 
-            ? `Tarik Tunai - ${description.trim()}`
-            : 'Tarik Tunai via Kios ATM';
-
-        // 3. Catat Transaksi Penarikan
-        const { error: txError } = await supabaseAdmin.from('transactions').insert({
-            student_id: studentId,
-            user_id: student.user_id,
-            amount: amount,
-            type: 'Pengeluaran',
-            category: 'TARIK_TUNAI',
-            description: formattedDescription
-        });
-
-        if (txError) throw txError;
-
-        // Auto trigger low balance WA notification asynchronously
-        if (student.user_id) {
-            triggerSingleStudentLowBalanceWA({
-                studentId,
-                teacherUserId: student.user_id,
-                baseUrl: process.env.NEXT_PUBLIC_APP_URL || 'https://tabungin.vercel.app'
-            }).catch(e => console.error('[KIOSK_LOW_BALANCE_WA_ERR]', e));
-        }
-
-        revalidatePath('/dashboard');
-        revalidatePath(`/profiles/${studentId}`);
-        revalidatePath('/home');
-
-        return { 
-            success: true, 
-            message: 'Penarikan berhasil!',
-            newBalance: currentBalance - amount
-        };
-
-    } catch (err) {
-        console.error('Kiosk Withdrawal Error:', err);
-        return { success: false, message: 'Terjadi kesalahan internal.' };
-    }
+    });
 }
 
 /**

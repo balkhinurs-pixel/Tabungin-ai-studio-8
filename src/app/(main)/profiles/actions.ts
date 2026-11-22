@@ -4,6 +4,14 @@ import type { Student } from '@/types';
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/utils/supabase/server';
 import { getSupabaseAdmin } from '@/lib/supabase-admin';
+import {
+  clearIdempotencyProcessing,
+  insertTransactionSafe,
+  lookupIdempotencyStatus,
+  markIdempotencyDone,
+  markIdempotencyProcessing,
+  withEntityLock,
+} from '@/lib/transaction-dedup';
 
 interface ActionResult {
   success: boolean;
@@ -844,4 +852,259 @@ export async function importStudentsAction(csvContent: string): Promise<ImportRe
     importedCount,
     newStudents: createdStudents
   };
+}
+
+export interface TeacherTransactionResult {
+  success: boolean;
+  message: string;
+  newBalance?: number;
+  transactionId?: string;
+  deduplicated?: boolean;
+}
+
+async function verifyStudentTransactionAccess(userId: string, studentId: string) {
+  const supabaseAdmin = getSupabaseAdmin();
+  const [profileRes, studentRes] = await Promise.all([
+    supabaseAdmin
+      .from('profiles')
+      .select('id, role')
+      .eq('id', userId)
+      .maybeSingle(),
+    supabaseAdmin
+      .from('students')
+      .select('id, name, user_id, transactions(amount, type)')
+      .eq('id', studentId)
+      .maybeSingle(),
+  ]);
+
+  if (studentRes.error || !studentRes.data) {
+    return { allowed: false as const, message: 'Data siswa tidak ditemukan.' };
+  }
+
+  const student = studentRes.data;
+  const isAdmin = profileRes.data?.role === 'ADMIN';
+  if (student.user_id !== userId && !isAdmin) {
+    return { allowed: false as const, message: 'Anda tidak memiliki akses untuk memproses transaksi siswa ini.' };
+  }
+
+  const currentBalance = (student.transactions || []).reduce(
+    (acc: number, tx: any) => acc + (tx.type === 'Pemasukan' ? Number(tx.amount || 0) : -Number(tx.amount || 0)),
+    0
+  );
+
+  return {
+    allowed: true as const,
+    student,
+    currentBalance,
+  };
+}
+
+export async function submitTeacherDepositAction(params: {
+  studentId: string;
+  amount: number;
+  description: string;
+  dateIso?: string;
+  idempotencyKey?: string;
+}): Promise<TeacherTransactionResult> {
+  const { studentId, amount, description, dateIso, idempotencyKey } = params;
+
+  if (!studentId) {
+    return { success: false, message: 'ID Siswa tidak valid.' };
+  }
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return { success: false, message: 'Nominal setoran harus lebih dari Rp 0.' };
+  }
+  if (!description || !description.trim()) {
+    return { success: false, message: 'Keterangan transaksi wajib diisi.' };
+  }
+
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return { success: false, message: 'Sesi berakhir, silakan login kembali.' };
+  }
+
+  const supabaseAdmin = getSupabaseAdmin();
+
+  return withEntityLock(`student:${studentId}`, async () => {
+    try {
+      const existing = await lookupIdempotencyStatus(supabaseAdmin, idempotencyKey);
+      if (existing.found) {
+        if (existing.status === 'PROCESSING') {
+          return { success: false, message: 'Setoran sedang diproses di server. Mohon tunggu sebentar.' };
+        }
+        if (existing.result) {
+          return existing.result;
+        }
+      }
+
+      markIdempotencyProcessing(idempotencyKey);
+
+      const access = await verifyStudentTransactionAccess(user.id, studentId);
+      if (!access.allowed) {
+        clearIdempotencyProcessing(idempotencyKey);
+        return { success: false, message: access.message };
+      }
+
+      let validDateIso = new Date().toISOString();
+      if (dateIso) {
+        const parsed = new Date(dateIso);
+        if (!isNaN(parsed.getTime())) {
+          validDateIso = parsed.toISOString();
+        }
+      }
+
+      const { error: txError, data: insertedTx, deduplicated } = await insertTransactionSafe(
+        supabaseAdmin,
+        {
+          student_id: studentId,
+          user_id: user.id,
+          amount,
+          description: description.trim(),
+          created_at: validDateIso,
+          type: 'Pemasukan',
+          category: 'TABUNGAN',
+        },
+        idempotencyKey
+      );
+
+      if (txError) {
+        clearIdempotencyProcessing(idempotencyKey);
+        return { success: false, message: 'Gagal menyimpan setoran ke database. Silakan coba lagi.' };
+      }
+
+      const newBalance = deduplicated ? access.currentBalance : access.currentBalance + amount;
+      const successPayload: TeacherTransactionResult = {
+        success: true,
+        message: 'Setoran berhasil disimpan.',
+        newBalance,
+        transactionId: insertedTx?.id,
+        deduplicated: !!deduplicated,
+      };
+      markIdempotencyDone(idempotencyKey, successPayload, insertedTx?.id);
+
+      if (!deduplicated) {
+        revalidatePath('/profiles');
+        revalidatePath(`/profiles/${studentId}`);
+        revalidatePath('/dashboard');
+        revalidatePath('/today-transactions');
+        revalidatePath('/home');
+      }
+
+      return successPayload;
+    } catch (err: any) {
+      clearIdempotencyProcessing(idempotencyKey);
+      console.error('[SUBMIT_TEACHER_DEPOSIT_ERR]', err);
+      return { success: false, message: 'Terjadi kesalahan saat menyimpan setoran.' };
+    }
+  });
+}
+
+export async function submitTeacherWithdrawalAction(params: {
+  studentId: string;
+  amount: number;
+  description: string;
+  dateIso?: string;
+  idempotencyKey?: string;
+}): Promise<TeacherTransactionResult> {
+  const { studentId, amount, description, dateIso, idempotencyKey } = params;
+
+  if (!studentId) {
+    return { success: false, message: 'ID Siswa tidak valid.' };
+  }
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return { success: false, message: 'Nominal penarikan harus lebih dari Rp 0.' };
+  }
+  if (!description || !description.trim()) {
+    return { success: false, message: 'Keterangan penarikan wajib diisi.' };
+  }
+
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return { success: false, message: 'Sesi berakhir, silakan login kembali.' };
+  }
+
+  const supabaseAdmin = getSupabaseAdmin();
+
+  return withEntityLock(`student:${studentId}`, async () => {
+    try {
+      const existing = await lookupIdempotencyStatus(supabaseAdmin, idempotencyKey);
+      if (existing.found) {
+        if (existing.status === 'PROCESSING') {
+          return { success: false, message: 'Penarikan sedang diproses di server. Mohon tunggu sebentar.' };
+        }
+        if (existing.result) {
+          return existing.result;
+        }
+      }
+
+      markIdempotencyProcessing(idempotencyKey);
+
+      const access = await verifyStudentTransactionAccess(user.id, studentId);
+      if (!access.allowed) {
+        clearIdempotencyProcessing(idempotencyKey);
+        return { success: false, message: access.message };
+      }
+
+      if (amount > access.currentBalance) {
+        clearIdempotencyProcessing(idempotencyKey);
+        return {
+          success: false,
+          message: `Saldo tidak mencukupi. Saldo terkini siswa: Rp ${access.currentBalance.toLocaleString('id-ID')}.`,
+        };
+      }
+
+      let validDateIso = new Date().toISOString();
+      if (dateIso) {
+        const parsed = new Date(dateIso);
+        if (!isNaN(parsed.getTime())) {
+          validDateIso = parsed.toISOString();
+        }
+      }
+
+      const { error: txError, data: insertedTx, deduplicated } = await insertTransactionSafe(
+        supabaseAdmin,
+        {
+          student_id: studentId,
+          user_id: user.id,
+          amount,
+          description: description.trim(),
+          created_at: validDateIso,
+          type: 'Pengeluaran',
+          category: 'TABUNGAN',
+        },
+        idempotencyKey
+      );
+
+      if (txError) {
+        clearIdempotencyProcessing(idempotencyKey);
+        return { success: false, message: 'Gagal menyimpan penarikan ke database. Silakan coba lagi.' };
+      }
+
+      const newBalance = deduplicated ? access.currentBalance : access.currentBalance - amount;
+      const successPayload: TeacherTransactionResult = {
+        success: true,
+        message: 'Penarikan berhasil disimpan.',
+        newBalance,
+        transactionId: insertedTx?.id,
+        deduplicated: !!deduplicated,
+      };
+      markIdempotencyDone(idempotencyKey, successPayload, insertedTx?.id);
+
+      if (!deduplicated) {
+        revalidatePath('/profiles');
+        revalidatePath(`/profiles/${studentId}`);
+        revalidatePath('/dashboard');
+        revalidatePath('/today-transactions');
+        revalidatePath('/home');
+      }
+
+      return successPayload;
+    } catch (err: any) {
+      clearIdempotencyProcessing(idempotencyKey);
+      console.error('[SUBMIT_TEACHER_WITHDRAWAL_ERR]', err);
+      return { success: false, message: 'Terjadi kesalahan saat menyimpan penarikan.' };
+    }
+  });
 }

@@ -31,7 +31,9 @@ import {
   Building2,
   ShieldCheck,
   RefreshCw,
-  User
+  User,
+  WifiOff,
+  SearchCheck
 } from 'lucide-react';
 import jsQR from 'jsqr';
 import { useToast } from '@/hooks/use-toast';
@@ -46,6 +48,9 @@ import {
   getCanteenItemsAction,
   getCanteenSchoolInfoAction
 } from '../actions';
+import { checkTransactionStatusByKey } from '@/app/actions/transaction-guard';
+import { executeWithNetworkGuard, generateIdempotencyKey } from '@/lib/transaction-client';
+import { useNetworkStatus } from '@/hooks/use-network-status';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 
@@ -91,15 +96,21 @@ export default function CantinePOSPage() {
   const [amount, setAmount] = useState('');
   const [pin, setPin] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const [errorKind, setErrorKind] = useState<'BUSINESS' | 'NETWORK'>('BUSINESS');
+  const [isSlowProcessing, setIsSlowProcessing] = useState(false);
+  const [isCheckingStatus, setIsCheckingStatus] = useState(false);
   const [isProcessingQR, setIsProcessingQR] = useState(false);
 
   // Scan Method: Default CAMERA (HP/Tablet) vs Hardware Scanner (USB/Bluetooth)
   const [scanMethod, setScanMethod] = useState<'CAMERA' | 'DEVICE'>('CAMERA');
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
 
+  const { isOnline } = useNetworkStatus();
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const processingRef = useRef(false);
+  const isSubmittingRef = useRef(false);
+  const idempotencyKeyRef = useRef<string>(generateIdempotencyKey('pos'));
   const scanBufferRef = useRef('');
   const lastKeyTimeRef = useRef(0);
   const manualAttemptRef = useRef(false);
@@ -191,9 +202,13 @@ export default function CantinePOSPage() {
     setCart([]);
     setIsProcessingQR(false);
     processingRef.current = false;
+    isSubmittingRef.current = false;
+    idempotencyKeyRef.current = generateIdempotencyKey('pos');
     scanBufferRef.current = '';
     manualAttemptRef.current = false;
     setErrorMessage('');
+    setErrorKind('BUSINESS');
+    setIsSlowProcessing(false);
     setCashGiven('');
     setCashChange(0);
     setCustomerName('Pembeli Umum');
@@ -327,10 +342,29 @@ export default function CantinePOSPage() {
     if (!data.trim() || processingRef.current) return;
     processingRef.current = true;
     setIsProcessingQR(true);
-    
-    const result = await getStudentDataForPayment(data, canteenSchool.schoolCode);
+
+    const guardRes = await executeWithNetworkGuard(
+      () => getStudentDataForPayment(data, canteenSchool.schoolCode),
+      { timeoutMs: 12000 }
+    );
+
+    if (!guardRes.ok || !guardRes.data) {
+      toast({
+        title: guardRes.failureKind === 'OFFLINE' ? 'Koneksi Terputus' : 'Gagal Verifikasi Kartu',
+        description: guardRes.message || 'Periksa koneksi internet Anda lalu scan ulang.',
+        variant: 'destructive',
+      });
+      setTimeout(() => {
+        setIsProcessingQR(false);
+        processingRef.current = false;
+      }, 2000);
+      return;
+    }
+
+    const result = guardRes.data;
 
     if (result.success) {
+        idempotencyKeyRef.current = generateIdempotencyKey('pos');
         setStudent(result.data);
         setPin('');
         setIsProcessingQR(false);
@@ -346,59 +380,173 @@ export default function CantinePOSPage() {
   };
 
   const handleProcessPayment = async () => {
-    setState('PROCESSING');
-    const result = await processCantinePayment({
-        studentId: student.id,
-        nis: student.nis,
-        schoolCode: student.schoolCode || canteenSchool.schoolCode,
-        amount: finalAmount,
-        pin: pin,
-        items: posMode === 'CATALOG' ? cart.map(c => ({ id: c.id, name: c.name, qty: c.qty, price: c.price })) : undefined
-    });
+    if (isSubmittingRef.current || !student) return;
 
-    if (result.success) {
-        setPayMethod('TABUNGAN');
-        setState('SUCCESS');
-    } else {
-        setErrorMessage(result.message);
+    if (!isOnline) {
+      setPayMethod('TABUNGAN');
+      setErrorKind('NETWORK');
+      setErrorMessage('Koneksi internet terputus. Pastikan Wi-Fi atau paket data aktif lalu coba kirim ulang.');
+      setState('ERROR');
+      return;
+    }
+
+    isSubmittingRef.current = true;
+    setPayMethod('TABUNGAN');
+    setIsSlowProcessing(false);
+    setState('PROCESSING');
+
+    try {
+      const guardRes = await executeWithNetworkGuard(
+        () => processCantinePayment({
+          studentId: student.id,
+          nis: student.nis,
+          schoolCode: student.schoolCode || canteenSchool.schoolCode,
+          amount: finalAmount,
+          pin: pin,
+          items: posMode === 'CATALOG' ? cart.map(c => ({ id: c.id, name: c.name, qty: c.qty, price: c.price })) : undefined,
+          idempotencyKey: idempotencyKeyRef.current,
+        }),
+        {
+          slowThresholdMs: 4500,
+          timeoutMs: 15000,
+          onSlowConnection: () => setIsSlowProcessing(true),
+        }
+      );
+
+      if (!guardRes.ok || !guardRes.data) {
+        setErrorKind('NETWORK');
+        setErrorMessage(guardRes.message || 'Koneksi terputus atau lambat. Cek status transaksi sebelum mengulang.');
         setState('ERROR');
+        return;
+      }
+
+      const result = guardRes.data;
+
+      if (result.success) {
+          idempotencyKeyRef.current = generateIdempotencyKey('pos');
+          setState('SUCCESS');
+      } else {
+          setErrorKind('BUSINESS');
+          // Key baru disiapkan jika ditolak oleh aturan bisnis (PIN salah, saldo kurang, stok kurang)
+          idempotencyKeyRef.current = generateIdempotencyKey('pos');
+          setErrorMessage(result.message || 'Pembayaran gagal diproses.');
+          setState('ERROR');
+      }
+    } finally {
+      isSubmittingRef.current = false;
+      setIsSlowProcessing(false);
     }
   };
 
   // Process Cash Payment
   const handleProcessCashPayment = async () => {
+    if (isSubmittingRef.current) return;
+
     const cashVal = parseInt(cashGiven || '0');
     if (cashVal < finalAmount) {
       toast({ title: "Uang tunai tidak cukup!", variant: "destructive" });
       return;
     }
 
-    setPayMethod('TUNAI');
-    setState('PROCESSING');
-    const result = await processCashPaymentAction({
-      amount: finalAmount,
-      cashGiven: cashVal,
-      customerName: customerName || 'Pembeli Umum',
-      items: posMode === 'CATALOG' ? cart.map(c => ({ id: c.id, name: c.name, qty: c.qty, price: c.price })) : undefined
-    });
-
-    if (result.success) {
-      setCashChange(result.change || 0);
-      setState('SUCCESS');
-    } else {
-      // Pastikan pesan error untuk kasir selalu rapi, sopan, dan bebas istilah database/SQL teknis
-      const isTechnical = result.message && (
-        result.message.includes('constraint') || 
-        result.message.includes('relation') || 
-        result.message.includes('violates') || 
-        result.message.includes('column') ||
-        result.message.includes('null value')
-      );
-      const cleanMsg = isTechnical 
-        ? 'Gagal memproses pembayaran tunai. Silakan coba kembali atau periksa koneksi.' 
-        : (result.message || 'Gagal memproses transaksi tunai.');
-      setErrorMessage(cleanMsg);
+    if (!isOnline) {
+      setPayMethod('TUNAI');
+      setErrorKind('NETWORK');
+      setErrorMessage('Koneksi internet terputus. Pastikan Wi-Fi atau paket data aktif lalu coba kirim ulang.');
       setState('ERROR');
+      return;
+    }
+
+    isSubmittingRef.current = true;
+    setPayMethod('TUNAI');
+    setIsSlowProcessing(false);
+    setState('PROCESSING');
+
+    try {
+      const guardRes = await executeWithNetworkGuard(
+        () => processCashPaymentAction({
+          amount: finalAmount,
+          cashGiven: cashVal,
+          customerName: customerName || 'Pembeli Umum',
+          items: posMode === 'CATALOG' ? cart.map(c => ({ id: c.id, name: c.name, qty: c.qty, price: c.price })) : undefined,
+          idempotencyKey: idempotencyKeyRef.current,
+        }),
+        {
+          slowThresholdMs: 4500,
+          timeoutMs: 15000,
+          onSlowConnection: () => setIsSlowProcessing(true),
+        }
+      );
+
+      if (!guardRes.ok || !guardRes.data) {
+        setErrorKind('NETWORK');
+        setErrorMessage(guardRes.message || 'Koneksi terputus atau lambat. Cek status transaksi sebelum mengulang.');
+        setState('ERROR');
+        return;
+      }
+
+      const result = guardRes.data;
+
+      if (result.success) {
+        setCashChange(result.change || 0);
+        idempotencyKeyRef.current = generateIdempotencyKey('pos');
+        setState('SUCCESS');
+      } else {
+        // Pastikan pesan error untuk kasir selalu rapi, sopan, dan bebas istilah database/SQL teknis
+        const isTechnical = result.message && (
+          result.message.includes('constraint') || 
+          result.message.includes('relation') || 
+          result.message.includes('violates') || 
+          result.message.includes('column') ||
+          result.message.includes('null value')
+        );
+        const cleanMsg = isTechnical 
+          ? 'Gagal memproses pembayaran tunai. Silakan coba kembali atau periksa koneksi.' 
+          : (result.message || 'Gagal memproses transaksi tunai.');
+        setErrorKind('BUSINESS');
+        idempotencyKeyRef.current = generateIdempotencyKey('pos');
+        setErrorMessage(cleanMsg);
+        setState('ERROR');
+      }
+    } finally {
+      isSubmittingRef.current = false;
+      setIsSlowProcessing(false);
+    }
+  };
+
+  const handleCheckPendingPayment = async () => {
+    if (isCheckingStatus) return;
+    setIsCheckingStatus(true);
+    try {
+      const check = await checkTransactionStatusByKey(idempotencyKeyRef.current);
+      if (check.status === 'DONE' && check.result?.success) {
+        if (payMethod === 'TUNAI' && typeof check.result.change === 'number') {
+          setCashChange(check.result.change);
+        }
+        idempotencyKeyRef.current = generateIdempotencyKey('pos');
+        toast({
+          title: 'Transaksi Sudah Tercatat!',
+          description: 'Pembayaran sebelumnya sudah berhasil masuk ke server. Tidak terjadi input ganda.',
+        });
+        setState('SUCCESS');
+      } else if (check.status === 'PROCESSING') {
+        toast({
+          title: 'Masih Diproses Server',
+          description: check.message,
+        });
+      } else {
+        toast({
+          title: 'Belum Tercatat di Server',
+          description: 'Aman untuk menekan tombol "Kirim Ulang (Aman)".',
+        });
+      }
+    } catch {
+      toast({
+        title: 'Gagal Memeriksa Status',
+        description: 'Koneksi masih terputus. Pastikan internet kembali aktif.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsCheckingStatus(false);
     }
   };
 
@@ -464,10 +612,16 @@ export default function CantinePOSPage() {
             ))}
         </div>
         
-        <div className="px-2">
+        <div className="px-2 space-y-2">
+          {state === 'PIN_INPUT' && !isOnline && (
+            <div className="flex items-center justify-center gap-1.5 text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-xl py-1.5 px-3">
+              <WifiOff className="h-3.5 w-3.5 shrink-0" />
+              <span>Sedang Offline — Menunggu koneksi internet pulih</span>
+            </div>
+          )}
           <Button 
               className="w-full h-14 rounded-xl text-base font-black shadow-xl shadow-primary/20 border-b-4 border-black/10 active:border-b-0 active:translate-y-1 transition-all" 
-              disabled={!value || (state === 'PIN_INPUT' && value.length < 6)}
+              disabled={!value || (state === 'PIN_INPUT' && (value.length < 6 || !isOnline))}
               onClick={onConfirm}
           >
               {state === 'PIN_INPUT' ? 'BAYAR SEKARANG' : 'LANJUT SCAN KARTU'} <ArrowRight className="ml-2 h-5 w-5" />
@@ -671,6 +825,7 @@ export default function CantinePOSPage() {
                     <Button 
                       disabled={cart.length === 0}
                       onClick={() => {
+                        idempotencyKeyRef.current = generateIdempotencyKey('pos');
                         setPayMethod('TUNAI');
                         setCashGiven(cartTotal.toString());
                         setCustomerName('Pembeli Umum');
@@ -683,6 +838,7 @@ export default function CantinePOSPage() {
                     <Button 
                       disabled={cart.length === 0}
                       onClick={() => {
+                        idempotencyKeyRef.current = generateIdempotencyKey('pos');
                         setPayMethod('TABUNGAN');
                         setState('SCANNING');
                       }}
@@ -712,6 +868,7 @@ export default function CantinePOSPage() {
                 <button
                   type="button"
                   onClick={() => {
+                    idempotencyKeyRef.current = generateIdempotencyKey('pos');
                     setPayMethod('TABUNGAN');
                     setState('SCANNING');
                   }}
@@ -738,6 +895,7 @@ export default function CantinePOSPage() {
                 <button
                   type="button"
                   onClick={() => {
+                    idempotencyKeyRef.current = generateIdempotencyKey('pos');
                     setPayMethod('TUNAI');
                     setCashGiven(finalAmount.toString());
                     setCustomerName('Pembeli Umum');
@@ -917,8 +1075,15 @@ export default function CantinePOSPage() {
                   </p>
                 </div>
 
+                {!isOnline && (
+                  <div className="flex items-center justify-center gap-1.5 text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-xl py-2 px-3">
+                    <WifiOff className="h-3.5 w-3.5 shrink-0" />
+                    <span>Koneksi terputus — Tombol simpan aktif kembali saat internet tersambung</span>
+                  </div>
+                )}
+
                 <Button 
-                  disabled={parseInt(cashGiven || '0') < finalAmount}
+                  disabled={parseInt(cashGiven || '0') < finalAmount || !isOnline}
                   onClick={handleProcessCashPayment}
                   className="w-full h-12 rounded-2xl font-black bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg text-xs tracking-wider"
                 >
@@ -1048,6 +1213,7 @@ export default function CantinePOSPage() {
                     <button
                       type="button"
                       onClick={() => {
+                        idempotencyKeyRef.current = generateIdempotencyKey('pos');
                         setPayMethod('TUNAI');
                         setCashGiven(finalAmount.toString());
                         setCustomerName('Pembeli Umum');
@@ -1114,14 +1280,18 @@ export default function CantinePOSPage() {
 
           {/* STEP 4: PROCESSING */}
           {state === 'PROCESSING' && (
-              <div className="flex flex-col items-center gap-4">
+              <div className="flex flex-col items-center gap-4 max-w-xs text-center my-auto">
                   <div className="relative">
                       <div className="h-16 w-16 border-4 border-gray-200 rounded-full" />
                       <div className="h-16 w-16 border-4 border-primary border-t-transparent rounded-full animate-spin absolute inset-0" />
                   </div>
-                  <div className="text-center">
+                  <div className="text-center space-y-1">
                       <h2 className="text-lg font-black text-gray-900 tracking-widest uppercase">MEMPROSES...</h2>
-                      <p className="text-[8px] font-bold text-gray-400 uppercase tracking-widest animate-pulse mt-1">Verifikasi Saldo & Potong Stok</p>
+                      <p className="text-[10px] font-bold text-gray-500 tracking-wider mt-1">
+                        {isSlowProcessing
+                          ? 'Koneksi agak lambat, mohon tunggu... Jangan tutup layar atau tekan ulang.'
+                          : 'Verifikasi Saldo & Potong Stok'}
+                      </p>
                   </div>
               </div>
           )}
@@ -1279,16 +1449,52 @@ export default function CantinePOSPage() {
 
           {/* STEP 6: ERROR */}
           {state === 'ERROR' && (
-              <div className="w-full max-w-sm text-center space-y-4">
-                   <div className="h-16 w-16 bg-rose-100 rounded-2xl flex items-center justify-center mx-auto shadow-lg shadow-rose-50">
-                      <XCircle className="h-8 w-8 text-rose-600" />
+              <div className="w-full max-w-sm text-center space-y-4 my-auto">
+                   <div className={cn(
+                     "h-16 w-16 rounded-2xl flex items-center justify-center mx-auto shadow-lg",
+                     errorKind === 'NETWORK' ? "bg-amber-100 shadow-amber-50" : "bg-rose-100 shadow-rose-50"
+                   )}>
+                      {errorKind === 'NETWORK' ? (
+                        <WifiOff className="h-8 w-8 text-amber-600" />
+                      ) : (
+                        <XCircle className="h-8 w-8 text-rose-600" />
+                      )}
                   </div>
                   <div className="space-y-1">
-                      <h2 className="text-xl font-black text-gray-900 tracking-tight uppercase">TRANSAKSI GAGAL</h2>
-                      <p className="text-rose-600 text-xs font-bold px-4 leading-relaxed">{errorMessage}</p>
+                      <h2 className="text-xl font-black text-gray-900 tracking-tight uppercase">
+                        {errorKind === 'NETWORK' ? 'KONEKSI BERMASALAH' : 'TRANSAKSI GAGAL'}
+                      </h2>
+                      <p className={cn(
+                        "text-xs font-bold px-4 leading-relaxed",
+                        errorKind === 'NETWORK' ? "text-amber-700" : "text-rose-600"
+                      )}>
+                        {errorMessage}
+                      </p>
                   </div>
                   <div className="grid grid-cols-1 gap-2 pt-2">
-                      {payMethod === 'TUNAI' ? (
+                      {errorKind === 'NETWORK' ? (
+                        <>
+                          <Button
+                            size="lg"
+                            className="w-full rounded-xl h-13 font-black shadow-lg bg-amber-600 hover:bg-amber-700 text-white tracking-wider gap-2"
+                            onClick={handleCheckPendingPayment}
+                            disabled={isCheckingStatus}
+                          >
+                            {isCheckingStatus ? <Loader2 className="h-4 w-4 animate-spin" /> : <SearchCheck className="h-4 w-4" />}
+                            CEK STATUS TRANSAKSI
+                          </Button>
+                          <Button
+                            size="lg"
+                            variant="outline"
+                            className="w-full rounded-xl h-12 font-black border-2 border-amber-300 text-amber-800 hover:bg-amber-50 gap-2"
+                            disabled={!isOnline || isCheckingStatus}
+                            onClick={payMethod === 'TUNAI' ? handleProcessCashPayment : handleProcessPayment}
+                          >
+                            <RefreshCw className="h-4 w-4" />
+                            KIRIM ULANG (AMAN / ANTI-DOBEL)
+                          </Button>
+                        </>
+                      ) : payMethod === 'TUNAI' ? (
                         <Button 
                           size="lg" 
                           className="w-full rounded-xl h-14 font-black shadow-lg bg-emerald-600 hover:bg-emerald-700 text-white tracking-wider" 

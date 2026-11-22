@@ -6,6 +6,14 @@ import { createClient } from '@/lib/utils/supabase/server';
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { revalidatePath } from 'next/cache';
 import { triggerSingleStudentLowBalanceWA } from '../settings/fonnte-actions';
+import {
+    clearIdempotencyProcessing,
+    insertTransactionSafe,
+    lookupIdempotencyStatus,
+    markIdempotencyDone,
+    markIdempotencyProcessing,
+    withEntityLock,
+} from '@/lib/transaction-dedup';
 
 /**
  * Mengambil daftar transaksi khusus untuk outlet yang sedang login dengan dukungan filter.
@@ -559,185 +567,235 @@ export async function processCantinePayment(params: {
     amount: number;
     pin: string;
     items?: Array<{ id: string; name: string; qty: number; price: number }>;
+    idempotencyKey?: string;
 }) {
-    const { studentId, nis, schoolCode, amount, pin, items } = params;
+    const { studentId, nis, schoolCode, amount, pin, items, idempotencyKey } = params;
+    if (!Number.isFinite(amount) || amount <= 0) {
+        return { success: false, message: 'Nominal pembayaran tidak valid.' };
+    }
+
     const supabaseAdmin = getSupabaseAdmin();
     const supabaseUser = createClient();
-    
-    try {
-        // 1. Verifikasi PIN
-        const authVerifier = createSupabaseClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-            {
-                auth: {
-                    autoRefreshToken: false,
-                    persistSession: false,
-                    detectSessionInUrl: false
+
+    return withEntityLock(`student:${studentId}`, async () => {
+        try {
+            // 0. Cek idempotency key agar transaksi tidak pernah masuk dobel saat koneksi putus/retry
+            const existing = await lookupIdempotencyStatus(supabaseAdmin, idempotencyKey);
+            if (existing.found) {
+                if (existing.status === 'PROCESSING') {
+                    return { success: false, message: 'Pembayaran sedang diproses oleh server. Mohon tunggu sebentar.' };
+                }
+                if (existing.result) {
+                    return existing.result;
                 }
             }
-        );
 
-        const shadowEmail = `${nis}@${schoolCode.toLowerCase()}.supabase.user`;
-        const { error: authError } = await authVerifier.auth.signInWithPassword({
-            email: shadowEmail,
-            password: pin
-        });
+            markIdempotencyProcessing(idempotencyKey);
 
-        if (authError) {
-            return { success: false, message: 'PIN Siswa Salah.' };
-        }
+            // 1. Verifikasi PIN
+            const authVerifier = createSupabaseClient(
+                process.env.NEXT_PUBLIC_SUPABASE_URL!,
+                process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+                {
+                    auth: {
+                        autoRefreshToken: false,
+                        persistSession: false,
+                        detectSessionInUrl: false
+                    }
+                }
+            );
 
-        // 2. Identitas Merchant & Cek Limit (Ambil data paling segar)
-        const { data: { user: activeMerchant } } = await supabaseUser.auth.getUser();
-        if (!activeMerchant) return { success: false, message: 'Sesi outlet berakhir.' };
+            const shadowEmail = `${nis}@${schoolCode.toLowerCase()}.supabase.user`;
+            const { error: authError } = await authVerifier.auth.signInWithPassword({
+                email: shadowEmail,
+                password: pin
+            });
 
-        // Cek stok item jika ada items yang dibeli
-        if (items && items.length > 0) {
-            for (const item of items) {
-                const { data: dbItem } = await supabaseAdmin
-                    .from('canteen_items')
-                    .select('stock, name')
-                    .eq('id', item.id)
-                    .single();
+            if (authError) {
+                clearIdempotencyProcessing(idempotencyKey);
+                return { success: false, message: 'PIN Siswa Salah.' };
+            }
 
-                if (dbItem && dbItem.stock < item.qty) {
+            // 2. Identitas Merchant & Cek Limit (Ambil data paling segar)
+            const { data: { user: activeMerchant } } = await supabaseUser.auth.getUser();
+            if (!activeMerchant) {
+                clearIdempotencyProcessing(idempotencyKey);
+                return { success: false, message: 'Sesi outlet berakhir.' };
+            }
+
+            // Cek stok item jika ada items yang dibeli
+            if (items && items.length > 0) {
+                for (const item of items) {
+                    const { data: dbItem } = await supabaseAdmin
+                        .from('canteen_items')
+                        .select('stock, name')
+                        .eq('id', item.id)
+                        .single();
+
+                    if (dbItem && dbItem.stock < item.qty) {
+                        clearIdempotencyProcessing(idempotencyKey);
+                        return { 
+                            success: false, 
+                            message: `Stok produk "${dbItem.name}" tidak mencukupi (Tersisa: ${dbItem.stock}).` 
+                        };
+                    }
+                }
+            }
+
+            const { data: merchantProfile } = await supabaseAdmin
+                .from('profiles')
+                .select('school_code, school_name')
+                .eq('id', activeMerchant.id)
+                .single();
+
+            const { data: student, error: studentError } = await supabaseAdmin
+                .from('students')
+                .select(`
+                    user_id, 
+                    daily_limit, 
+                    transactions(amount, type, created_at, category),
+                    profiles:user_id!inner(school_code, school_name)
+                `)
+                .eq('id', studentId)
+                .single();
+
+            if (studentError || !student) {
+                clearIdempotencyProcessing(idempotencyKey);
+                return { success: false, message: 'Gagal verifikasi data siswa.' };
+            }
+
+            // VALIDASI KETAT SEKOLAH: Cegah santri dari sekolah lain bertransaksi di kantin ini
+            if (merchantProfile?.school_code && (student.profiles as any)?.school_code) {
+                const merchantCode = merchantProfile.school_code.toLowerCase().trim();
+                const studentCode = ((student.profiles as any).school_code as string).toLowerCase().trim();
+                if (merchantCode !== studentCode) {
+                    const schoolName = merchantProfile.school_name || merchantCode.toUpperCase();
+                    clearIdempotencyProcessing(idempotencyKey);
                     return { 
                         success: false, 
-                        message: `Stok produk "${dbItem.name}" tidak mencukupi (Tersisa: ${dbItem.stock}).` 
+                        message: `PEMBAYARAN DITOLAK. Siswa bukan santri dari ${schoolName}. Kantin ini hanya melayani santri terdaftar.` 
                     };
                 }
             }
-        }
 
-        const { data: merchantProfile } = await supabaseAdmin
-            .from('profiles')
-            .select('school_code, school_name')
-            .eq('id', activeMerchant.id)
-            .single();
+            const currentBalance = (student.transactions || []).reduce((acc: number, tx: any) => {
+                return acc + (tx.type === 'Pemasukan' ? tx.amount : -tx.amount);
+            }, 0);
 
-        const { data: student, error: studentError } = await supabaseAdmin
-            .from('students')
-            .select(`
-                user_id, 
-                daily_limit, 
-                transactions(amount, type, created_at),
-                profiles:user_id!inner(school_code, school_name)
-            `)
-            .eq('id', studentId)
-            .single();
-
-        if (studentError || !student) return { success: false, message: 'Gagal verifikasi data siswa.' };
-
-        // VALIDASI KETAT SEKOLAH: Cegah santri dari sekolah lain bertransaksi di kantin ini
-        if (merchantProfile?.school_code && (student.profiles as any)?.school_code) {
-            const merchantCode = merchantProfile.school_code.toLowerCase().trim();
-            const studentCode = ((student.profiles as any).school_code as string).toLowerCase().trim();
-            if (merchantCode !== studentCode) {
-                const schoolName = merchantProfile.school_name || merchantCode.toUpperCase();
-                return { 
-                    success: false, 
-                    message: `PEMBAYARAN DITOLAK. Siswa bukan santri dari ${schoolName}. Kantin ini hanya melayani santri terdaftar.` 
-                };
+            if (amount > currentBalance) {
+                clearIdempotencyProcessing(idempotencyKey);
+                return { success: false, message: 'Saldo Tabungan Tidak Cukup.' };
             }
-        }
 
-        const currentBalance = (student.transactions || []).reduce((acc: number, tx: any) => {
-            return acc + (tx.type === 'Pemasukan' ? tx.amount : -tx.amount);
-        }, 0);
+            // CEK LIMIT HARIAN UANG SAKU (SECURITY CHECK)
+            if (student.daily_limit && student.daily_limit > 0) {
+                const todayStart = new Date();
+                todayStart.setHours(0,0,0,0);
+                
+                // Hitung total pengeluaran uang saku hari ini (Kantin + ATM Kios)
+                const todaySpent = (student.transactions || [])
+                    .filter((tx: any) => tx.type === 'Pengeluaran' && 
+                        (tx.category === 'BELANJA_KANTIN' || tx.category === 'TARIK_TUNAI') && 
+                        new Date(tx.created_at) >= todayStart
+                    )
+                    .reduce((sum: number, tx: any) => sum + tx.amount, 0);
 
-        if (amount > currentBalance) {
-            return { success: false, message: 'Saldo Tabungan Tidak Cukup.' };
-        }
-
-        // CEK LIMIT HARIAN UANG SAKU (SECURITY CHECK)
-        if (student.daily_limit && student.daily_limit > 0) {
-            const todayStart = new Date();
-            todayStart.setHours(0,0,0,0);
-            
-            // Hitung total pengeluaran uang saku hari ini (Kantin + ATM Kios)
-            const todaySpent = (student.transactions || [])
-                .filter((tx: any) => tx.type === 'Pengeluaran' && 
-                    (tx.category === 'BELANJA_KANTIN' || tx.category === 'TARIK_TUNAI') && 
-                    new Date(tx.created_at) >= todayStart
-                )
-                .reduce((sum: number, tx: any) => sum + tx.amount, 0);
-
-            if (todaySpent + amount > student.daily_limit) {
-                const remaining = Math.max(0, student.daily_limit - todaySpent);
-                return { 
-                    success: false, 
-                    message: `PEMBAYARAN DITOLAK. Limit uang saku harian siswa terlampaui (Batas: Rp ${student.daily_limit.toLocaleString('id-ID')}/hari). Sisa jatah uang saku hari ini: Rp ${remaining.toLocaleString('id-ID')}` 
-                };
-            }
-        }
-
-        const merchantDisplayName = merchantProfile?.school_name || activeMerchant.email?.split('@')[0].toUpperCase() || 'KANTIN';
-
-        // Susun rincian item deskripsi
-        let desc = `Belanja: ${merchantDisplayName}`;
-        if (items && items.length > 0) {
-            const itemSummary = items.map(i => `${i.name} (${i.qty}x)`).join(', ');
-            desc = `Belanja: ${itemSummary}`;
-        }
-
-        // 3. Insert Transaksi
-        const { error: txError } = await supabaseAdmin.from('transactions').insert({
-            student_id: studentId,
-            user_id: activeMerchant.id,
-            amount: amount,
-            type: 'Pengeluaran',
-            category: 'BELANJA_KANTIN',
-            description: desc,
-            is_settled: false
-        });
-
-        if (txError) throw txError;
-
-        // Auto trigger Fonnte Low Balance WA asynchronously
-        if (student.user_id) {
-            triggerSingleStudentLowBalanceWA({
-                studentId,
-                teacherUserId: student.user_id,
-                baseUrl: process.env.NEXT_PUBLIC_APP_URL || 'https://tabungin.vercel.app'
-            }).catch(e => console.error('[CANTINE_LOW_BALANCE_WA_ERR]', e));
-        }
-
-        // 4. Potong Stok Item di DB jika ada
-        if (items && items.length > 0) {
-            for (const item of items) {
-                const { data: currentItem } = await supabaseAdmin
-                    .from('canteen_items')
-                    .select('stock')
-                    .eq('id', item.id)
-                    .single();
-
-                if (currentItem) {
-                    const newStock = Math.max(0, currentItem.stock - item.qty);
-                    await supabaseAdmin
-                        .from('canteen_items')
-                        .update({ 
-                            stock: newStock, 
-                            is_available: newStock > 0,
-                            updated_at: new Date().toISOString() 
-                        })
-                        .eq('id', item.id);
+                if (todaySpent + amount > student.daily_limit) {
+                    const remaining = Math.max(0, student.daily_limit - todaySpent);
+                    clearIdempotencyProcessing(idempotencyKey);
+                    return { 
+                        success: false, 
+                        message: `PEMBAYARAN DITOLAK. Limit uang saku harian siswa terlampaui (Batas: Rp ${student.daily_limit.toLocaleString('id-ID')}/hari). Sisa jatah uang saku hari ini: Rp ${remaining.toLocaleString('id-ID')}` 
+                    };
                 }
             }
+
+            const merchantDisplayName = merchantProfile?.school_name || activeMerchant.email?.split('@')[0].toUpperCase() || 'KANTIN';
+
+            // Susun rincian item deskripsi
+            let desc = `Belanja: ${merchantDisplayName}`;
+            if (items && items.length > 0) {
+                const itemSummary = items.map(i => `${i.name} (${i.qty}x)`).join(', ');
+                desc = `Belanja: ${itemSummary}`;
+            }
+
+            // 3. Insert Transaksi Aman Anti-Dobel
+            const { error: txError, data: insertedTx, deduplicated } = await insertTransactionSafe(
+                supabaseAdmin,
+                {
+                    student_id: studentId,
+                    user_id: activeMerchant.id,
+                    amount: amount,
+                    type: 'Pengeluaran',
+                    category: 'BELANJA_KANTIN',
+                    description: desc,
+                    is_settled: false
+                },
+                idempotencyKey
+            );
+
+            if (txError) {
+                clearIdempotencyProcessing(idempotencyKey);
+                throw txError;
+            }
+
+            const successPayload = {
+                success: true,
+                message: 'Pembayaran Berhasil.',
+                transactionId: insertedTx?.id,
+                deduplicated: !!deduplicated,
+            };
+            markIdempotencyDone(idempotencyKey, successPayload, insertedTx?.id);
+
+            if (!deduplicated) {
+                // Auto trigger Fonnte Low Balance WA asynchronously
+                if (student.user_id) {
+                    triggerSingleStudentLowBalanceWA({
+                        studentId,
+                        teacherUserId: student.user_id,
+                        baseUrl: process.env.NEXT_PUBLIC_APP_URL || 'https://tabungin.vercel.app'
+                    }).catch(e => console.error('[CANTINE_LOW_BALANCE_WA_ERR]', e));
+                }
+
+                // 4. Potong Stok Item di DB jika ada
+                if (items && items.length > 0) {
+                    for (const item of items) {
+                        const { data: currentItem } = await supabaseAdmin
+                            .from('canteen_items')
+                            .select('stock')
+                            .eq('id', item.id)
+                            .single();
+
+                        if (currentItem) {
+                            const newStock = Math.max(0, currentItem.stock - item.qty);
+                            await supabaseAdmin
+                                .from('canteen_items')
+                                .update({ 
+                                    stock: newStock, 
+                                    is_available: newStock > 0,
+                                    updated_at: new Date().toISOString() 
+                                })
+                                .eq('id', item.id);
+                        }
+                    }
+                }
+
+                revalidatePath('/', 'layout'); 
+                revalidatePath('/dashboard');
+                revalidatePath('/home');
+                revalidatePath(`/profiles/${studentId}`);
+                revalidatePath('/cantine/menu');
+                revalidatePath('/cantine/history');
+                revalidatePath('/cantine/payment');
+            }
+
+            return successPayload;
+        } catch (err: any) {
+            clearIdempotencyProcessing(idempotencyKey);
+            console.error('[PROCESS_CANTINE_PAYMENT_ERR]', err);
+            return { success: false, message: 'Gagal memproses pembayaran. Silakan periksa koneksi atau coba beberapa saat lagi.' };
         }
-
-        revalidatePath('/', 'layout'); 
-        revalidatePath('/dashboard');
-        revalidatePath('/home');
-        revalidatePath(`/profiles/${studentId}`);
-        revalidatePath('/cantine/menu');
-        revalidatePath('/cantine/history');
-        revalidatePath('/cantine/payment');
-
-        return { success: true, message: 'Pembayaran Berhasil.' };
-    } catch (err: any) {
-        return { success: false, message: 'Gagal: ' + (err.message || 'Error internal') };
-    }
+    });
 }
 
 /**
@@ -749,185 +807,211 @@ export async function processCashPaymentAction(params: {
     cashGiven: number;
     items?: Array<{ id: string; name: string; qty: number; price: number }>;
     customerName?: string;
+    idempotencyKey?: string;
 }) {
-    const { amount, cashGiven, items, customerName } = params;
+    const { amount, cashGiven, items, customerName, idempotencyKey } = params;
+    if (!Number.isFinite(amount) || amount <= 0) {
+        return { success: false, message: 'Nominal tagihan tidak valid.' };
+    }
+    if (!Number.isFinite(cashGiven) || cashGiven < amount) {
+        return { success: false, message: 'Uang tunai yang diterima kurang dari total tagihan.' };
+    }
+
     const supabaseAdmin = getSupabaseAdmin();
     const supabaseUser = createClient();
 
-    try {
-        const { data: { user: activeMerchant } } = await supabaseUser.auth.getUser();
-        if (!activeMerchant) return { success: false, message: 'Sesi outlet berakhir.' };
+    const { data: { user: activeMerchant } } = await supabaseUser.auth.getUser();
+    if (!activeMerchant) return { success: false, message: 'Sesi outlet berakhir.' };
 
-        if (cashGiven < amount) {
-            return { success: false, message: 'Uang tunai yang diterima kurang dari total tagihan.' };
-        }
-
-        // Cek stok item jika ada
-        if (items && items.length > 0) {
-            for (const item of items) {
-                const { data: dbItem } = await supabaseAdmin
-                    .from('canteen_items')
-                    .select('stock, name')
-                    .eq('id', item.id)
-                    .single();
-
-                if (dbItem && dbItem.stock < item.qty) {
-                    return { 
-                        success: false, 
-                        message: `Stok produk "${dbItem.name}" tidak mencukupi (Tersisa: ${dbItem.stock}).` 
-                    };
+    return withEntityLock(`cash:${activeMerchant.id}`, async () => {
+        try {
+            // 0. Cek idempotency key agar pembayaran tunai tidak tercatat dua kali
+            const existing = await lookupIdempotencyStatus(supabaseAdmin, idempotencyKey);
+            if (existing.found) {
+                if (existing.status === 'PROCESSING') {
+                    return { success: false, message: 'Pembayaran tunai sedang diproses. Mohon tunggu sebentar.' };
+                }
+                if (existing.result) {
+                    return existing.result;
                 }
             }
-        }
 
-        const { data: merchantProfile } = await supabaseAdmin
-            .from('profiles')
-            .select('school_name')
-            .eq('id', activeMerchant.id)
-            .single();
+            markIdempotencyProcessing(idempotencyKey);
 
-        const merchantDisplayName = merchantProfile?.school_name || activeMerchant.email?.split('@')[0].toUpperCase() || 'KANTIN';
-
-        let desc = `Penjualan Tunai: ${customerName || 'Pembeli Tunai'}`;
-        if (items && items.length > 0) {
-            const itemSummary = items.map(i => `${i.name} (${i.qty}x)`).join(', ');
-            desc = `Tunai [${customerName || 'Pembeli'}]: ${itemSummary}`;
-        }
-
-        // Helper fallback internal: Jika database Supabase masih memberlakukan NOT NULL pada student_id
-        async function getOrCreateGeneralBuyerStudentId(merchantUserId: string): Promise<string | null> {
-            try {
-                // 1. Cek apakah sudah ada akun penampung kas tunai
-                const { data: existingStudent } = await supabaseAdmin
-                    .from('students')
-                    .select('id')
-                    .or('nis.eq.CASH-UMUM,nis.eq.UMUM')
-                    .limit(1)
-                    .maybeSingle();
-
-                if (existingStudent?.id) {
-                    return existingStudent.id;
-                }
-
-                // 2. Cek apakah ada record dengan nama Pembeli Umum
-                const { data: existingByName } = await supabaseAdmin
-                    .from('students')
-                    .select('id')
-                    .ilike('name', '%Pembeli Umum%')
-                    .limit(1)
-                    .maybeSingle();
-
-                if (existingByName?.id) {
-                    return existingByName.id;
-                }
-
-                // 3. Buat shadow user khusus penampung kas tunai
-                const dummyEmail = `cash_umum_${merchantUserId.slice(0, 8)}@kantin.system.supabase.user`;
-                const { data: authData } = await supabaseAdmin.auth.admin.createUser({
-                    email: dummyEmail,
-                    password: 'SystemCashUser2026!',
-                    email_confirm: true,
-                    user_metadata: { role: 'STUDENT', name: 'Pembeli Umum (Kas Kantin)' }
-                });
-
-                const targetAuthId = authData?.user?.id;
-                if (targetAuthId) {
-                    const { data: newStudent } = await supabaseAdmin
-                        .from('students')
-                        .insert({
-                            id: targetAuthId,
-                            nis: 'CASH-UMUM',
-                            name: 'Pembeli Umum (Kas Kantin)',
-                            class: 'Umum',
-                            user_id: merchantUserId
-                        })
-                        .select('id')
+            // Cek stok item jika ada
+            if (items && items.length > 0) {
+                for (const item of items) {
+                    const { data: dbItem } = await supabaseAdmin
+                        .from('canteen_items')
+                        .select('stock, name')
+                        .eq('id', item.id)
                         .single();
 
-                    if (newStudent?.id) {
-                        return newStudent.id;
+                    if (dbItem && dbItem.stock < item.qty) {
+                        clearIdempotencyProcessing(idempotencyKey);
+                        return { 
+                            success: false, 
+                            message: `Stok produk "${dbItem.name}" tidak mencukupi (Tersisa: ${dbItem.stock}).` 
+                        };
                     }
                 }
-            } catch (fallbackErr) {
-                console.warn('[GENERAL_BUYER_FALLBACK_WARN]', fallbackErr);
             }
-            return null;
-        }
 
-        // 1. Coba simpan transaksi penjualan tunai dengan student_id: null (rekomendasi standar)
-        const txPayload: any = {
-            user_id: activeMerchant.id,
-            amount: amount,
-            type: 'Pengeluaran',
-            category: 'BELANJA_KANTIN',
-            description: desc,
-            is_settled: true // Langsung lunas untuk tunai
-        };
-
-        let { error: txError } = await supabaseAdmin.from('transactions').insert(txPayload);
-
-        // 2. Self-Healing Fallback: Jika skema database Supabase masih terkena not-null constraint pada student_id
-        if (txError && (
-            txError.code === '23502' || 
-            txError.message?.toLowerCase().includes('violates not-null constraint') ||
-            txError.message?.toLowerCase().includes('student_id')
-        )) {
-            console.log('[CASH_PAYMENT] student_id constraint detected, using general cash buyer fallback...');
-            const fallbackStudentId = await getOrCreateGeneralBuyerStudentId(activeMerchant.id);
-            if (fallbackStudentId) {
-                const retryRes = await supabaseAdmin.from('transactions').insert({
-                    ...txPayload,
-                    student_id: fallbackStudentId
-                });
-                txError = retryRes.error;
+            let desc = `Penjualan Tunai: ${customerName || 'Pembeli Tunai'}`;
+            if (items && items.length > 0) {
+                const itemSummary = items.map(i => `${i.name} (${i.qty}x)`).join(', ');
+                desc = `Tunai [${customerName || 'Pembeli'}]: ${itemSummary}`;
             }
-        }
 
-        if (txError) {
-            console.error('[PROCESS_CASH_PAYMENT_ERROR]', txError);
-            return {
-                success: false,
-                message: 'Gagal memproses pembayaran tunai. Silakan coba kembali atau periksa koneksi.'
+            // Helper fallback internal: Jika database Supabase masih memberlakukan NOT NULL pada student_id
+            async function getOrCreateGeneralBuyerStudentId(merchantUserId: string): Promise<string | null> {
+                try {
+                    // 1. Cek apakah sudah ada akun penampung kas tunai
+                    const { data: existingStudent } = await supabaseAdmin
+                        .from('students')
+                        .select('id')
+                        .or('nis.eq.CASH-UMUM,nis.eq.UMUM')
+                        .limit(1)
+                        .maybeSingle();
+
+                    if (existingStudent?.id) {
+                        return existingStudent.id;
+                    }
+
+                    // 2. Cek apakah ada record dengan nama Pembeli Umum
+                    const { data: existingByName } = await supabaseAdmin
+                        .from('students')
+                        .select('id')
+                        .ilike('name', '%Pembeli Umum%')
+                        .limit(1)
+                        .maybeSingle();
+
+                    if (existingByName?.id) {
+                        return existingByName.id;
+                    }
+
+                    // 3. Buat shadow user khusus penampung kas tunai
+                    const dummyEmail = `cash_umum_${merchantUserId.slice(0, 8)}@kantin.system.supabase.user`;
+                    const { data: authData } = await supabaseAdmin.auth.admin.createUser({
+                        email: dummyEmail,
+                        password: 'SystemCashUser2026!',
+                        email_confirm: true,
+                        user_metadata: { role: 'STUDENT', name: 'Pembeli Umum (Kas Kantin)' }
+                    });
+
+                    const targetAuthId = authData?.user?.id;
+                    if (targetAuthId) {
+                        const { data: newStudent } = await supabaseAdmin
+                            .from('students')
+                            .insert({
+                                id: targetAuthId,
+                                nis: 'CASH-UMUM',
+                                name: 'Pembeli Umum (Kas Kantin)',
+                                class: 'Umum',
+                                user_id: merchantUserId
+                            })
+                            .select('id')
+                            .single();
+
+                        if (newStudent?.id) {
+                            return newStudent.id;
+                        }
+                    }
+                } catch (fallbackErr) {
+                    console.warn('[GENERAL_BUYER_FALLBACK_WARN]', fallbackErr);
+                }
+                return null;
+            }
+
+            // 1. Coba simpan transaksi penjualan tunai dengan student_id: null (rekomendasi standar)
+            const txPayload: any = {
+                user_id: activeMerchant.id,
+                amount: amount,
+                type: 'Pengeluaran',
+                category: 'BELANJA_KANTIN',
+                description: desc,
+                is_settled: true // Langsung lunas untuk tunai
             };
-        }
 
-        // Potong stok item
-        if (items && items.length > 0) {
-            for (const item of items) {
-                const { data: currentItem } = await supabaseAdmin
-                    .from('canteen_items')
-                    .select('stock')
-                    .eq('id', item.id)
-                    .single();
+            let insertRes = await insertTransactionSafe(supabaseAdmin, txPayload, idempotencyKey);
 
-                if (currentItem) {
-                    const newStock = Math.max(0, currentItem.stock - item.qty);
-                    await supabaseAdmin
-                        .from('canteen_items')
-                        .update({ 
-                            stock: newStock, 
-                            is_available: newStock > 0,
-                            updated_at: new Date().toISOString() 
-                        })
-                        .eq('id', item.id);
+            // 2. Self-Healing Fallback: Jika skema database Supabase masih terkena not-null constraint pada student_id
+            if (insertRes.error && (
+                insertRes.error.code === '23502' || 
+                insertRes.error.message?.toLowerCase().includes('violates not-null constraint') ||
+                insertRes.error.message?.toLowerCase().includes('student_id')
+            )) {
+                console.log('[CASH_PAYMENT] student_id constraint detected, using general cash buyer fallback...');
+                const fallbackStudentId = await getOrCreateGeneralBuyerStudentId(activeMerchant.id);
+                if (fallbackStudentId) {
+                    insertRes = await insertTransactionSafe(
+                        supabaseAdmin,
+                        {
+                            ...txPayload,
+                            student_id: fallbackStudentId
+                        },
+                        idempotencyKey
+                    );
                 }
             }
+
+            if (insertRes.error) {
+                clearIdempotencyProcessing(idempotencyKey);
+                console.error('[PROCESS_CASH_PAYMENT_ERROR]', insertRes.error);
+                return {
+                    success: false,
+                    message: 'Gagal memproses pembayaran tunai. Silakan coba kembali atau periksa koneksi.'
+                };
+            }
+
+            const deduplicated = !!insertRes.deduplicated;
+            const change = cashGiven - amount;
+            const successPayload = { 
+                success: true, 
+                message: 'Pembayaran Tunai Berhasil!',
+                change: change,
+                transactionId: insertRes.data?.id,
+                deduplicated,
+            };
+            markIdempotencyDone(idempotencyKey, successPayload, insertRes.data?.id);
+
+            if (!deduplicated) {
+                // Potong stok item
+                if (items && items.length > 0) {
+                    for (const item of items) {
+                        const { data: currentItem } = await supabaseAdmin
+                            .from('canteen_items')
+                            .select('stock')
+                            .eq('id', item.id)
+                            .single();
+
+                        if (currentItem) {
+                            const newStock = Math.max(0, currentItem.stock - item.qty);
+                            await supabaseAdmin
+                                .from('canteen_items')
+                                .update({ 
+                                    stock: newStock, 
+                                    is_available: newStock > 0,
+                                    updated_at: new Date().toISOString() 
+                                })
+                                .eq('id', item.id);
+                        }
+                    }
+                }
+
+                revalidatePath('/', 'layout');
+                revalidatePath('/dashboard');
+                revalidatePath('/cantine/menu');
+                revalidatePath('/cantine/history');
+            }
+
+            return successPayload;
+        } catch (err: any) {
+            clearIdempotencyProcessing(idempotencyKey);
+            console.error('[PROCESS_CASH_PAYMENT_EXCEPTION]', err);
+            return { success: false, message: 'Gagal memproses transaksi tunai. Silakan periksa koneksi Anda.' };
         }
-
-        revalidatePath('/', 'layout');
-        revalidatePath('/dashboard');
-        revalidatePath('/cantine/menu');
-        revalidatePath('/cantine/history');
-
-        const change = cashGiven - amount;
-        return { 
-            success: true, 
-            message: 'Pembayaran Tunai Berhasil!',
-            change: change 
-        };
-    } catch (err: any) {
-        return { success: false, message: 'Gagal memproses transaksi tunai: ' + (err.message || 'Error internal') };
-    }
+    });
 }
 
 /**

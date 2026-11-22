@@ -5,6 +5,7 @@ import { Toaster } from '@/components/ui/toaster';
 import './globals.css';
 import PWAInstallPrompt from '@/components/PWAInstallPrompt';
 import SplashScreen from '@/components/layout/SplashScreen';
+import NetworkStatusBanner from '@/components/NetworkStatusBanner';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-sans' });
 
@@ -81,6 +82,7 @@ export default function RootLayout({
   return (
     <html lang="id" suppressHydrationWarning>
       <body className={`font-sans antialiased ${inter.variable} bg-background`}>
+        <NetworkStatusBanner />
         <SplashScreen />
         {children}
         <Toaster />
