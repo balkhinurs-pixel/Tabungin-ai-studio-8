@@ -1,6 +1,6 @@
 
 import type { LucideIcon } from 'lucide-react';
-import { LayoutGrid, Users, FileText, Settings, Scan, Banknote, History } from 'lucide-react';
+import { Home, Users, Scan, Wallet, History } from 'lucide-react';
 
 interface NavItem {
   href: string;
@@ -13,7 +13,7 @@ export const NAV_ITEMS: NavItem[] = [
   {
     href: '/dashboard',
     title: 'Beranda',
-    icon: LayoutGrid,
+    icon: Home,
   },
   {
     href: '/profiles',
@@ -34,6 +34,6 @@ export const NAV_ITEMS: NavItem[] = [
   {
     href: '/settlement',
     title: 'Keuangan',
-    icon: Banknote,
+    icon: Wallet,
   },
 ];
